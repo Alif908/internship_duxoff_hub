@@ -1,0 +1,39 @@
+{
+  "project_info": {
+    "project_number": "758411605078",
+    "project_id": "qkwash-87499",
+    "storage_bucket": "qkwash-87499.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:758411605078:android:fc45758d1f4c6818c077f7",
+        "android_client_info": {
+          "package_name": "com.example.internship_duxoff_hub"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "758411605078-oaitu4kiupm6h5auct5t7vcrh78fqdqr.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAJE4NmPRavQmqRB-988BbOMGxtYoKlt6k"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "758411605078-oaitu4kiupm6h5auct5t7vcrh78fqdqr.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
