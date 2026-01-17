@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-
 import 'package:internship_duxoff_hub/views/home%20screen/qrscanning/washstartpage.dart';
 
 class PaymentSuccessPage extends StatelessWidget {
@@ -20,89 +19,73 @@ class PaymentSuccessPage extends StatelessWidget {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.white,
+      appBar: AppBar(
+        backgroundColor: Colors.white,
+        elevation: 0,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back, color: Colors.black),
+          onPressed: () => Navigator.pop(context),
+        ),
+      ),
       body: SafeArea(
         child: Column(
           children: [
-            const Spacer(),
-            
-            // Success Icon/Image
-            Container(
-              width: 120,
-              height: 120,
-              decoration: BoxDecoration(
-                color: Colors.green.withOpacity(0.1),
-                shape: BoxShape.circle,
-              ),
-              child: const Icon(
-                Icons.check_circle,
-                size: 80,
-                color: Colors.green,
-              ),
+            const Spacer(flex: 1),
+
+            // Illustration Image
+            Image.asset(
+              'assets/images/paymentsuccessfull.png',
+              height: 280,
+              fit: BoxFit.contain,
             ),
-            
-            const SizedBox(height: 32),
-            
+
+            const SizedBox(height: 24),
+
+            // Success Icon (using tick-circle.png)
+            Image.asset(
+              'assets/images/tick-circle.png',
+              width: 60,
+              height: 60,
+              fit: BoxFit.contain,
+            ),
+
+            const SizedBox(height: 16),
+
             // Success Message
             const Text(
               'Payment Successful!',
               style: TextStyle(
-                fontSize: 24,
+                fontSize: 20,
                 fontWeight: FontWeight.bold,
                 color: Colors.black,
               ),
             ),
-            
-            const SizedBox(height: 12),
-            
+
+            const SizedBox(height: 8),
+
+            // Total Payment Label
             Text(
               'Total Payment',
-              style: TextStyle(
-                fontSize: 14,
-                color: Colors.grey[600],
-              ),
+              style: TextStyle(fontSize: 13, color: Colors.grey[600]),
             ),
-            
-            const SizedBox(height: 8),
-            
+
+            const SizedBox(height: 4),
+
             // Amount
             Text(
               '₹ ${amount.toStringAsFixed(2)}',
               style: const TextStyle(
-                fontSize: 36,
+                fontSize: 32,
                 fontWeight: FontWeight.bold,
                 color: Colors.black,
               ),
             ),
-            
-            const SizedBox(height: 32),
-            
-            // Info Card
-            Container(
-              margin: const EdgeInsets.symmetric(horizontal: 24),
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: Colors.blue.withOpacity(0.05),
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(
-                  color: const Color(0xFF4A90E2).withOpacity(0.2),
-                ),
-              ),
-              child: Column(
-                children: [
-                  _buildInfoRow('Hub Name', hubName),
-                  const SizedBox(height: 12),
-                  _buildInfoRow('Machine', machineId),
-                  const SizedBox(height: 12),
-                  _buildInfoRow('Duration', washTime),
-                ],
-              ),
-            ),
-            
-            const Spacer(),
-            
+
+            const Spacer(flex: 2),
+
             // Continue Button
             Padding(
-              padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
+              padding: const EdgeInsets.fromLTRB(24, 0, 24, 32),
               child: SizedBox(
                 width: double.infinity,
                 child: ElevatedButton(
@@ -113,13 +96,13 @@ class PaymentSuccessPage extends StatelessWidget {
                         builder: (context) => WashStartPage(
                           machineId: machineId,
                           hubName: hubName,
-                          washTime: washTime,
+                          
                         ),
                       ),
                     );
                   },
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF4A90E2),
+                    backgroundColor: const Color(0xFF2196F3),
                     foregroundColor: Colors.white,
                     padding: const EdgeInsets.symmetric(vertical: 16),
                     shape: RoundedRectangleBorder(
@@ -130,7 +113,7 @@ class PaymentSuccessPage extends StatelessWidget {
                   child: const Text(
                     'CONTINUE TO WASH',
                     style: TextStyle(
-                      fontSize: 15,
+                      fontSize: 14,
                       fontWeight: FontWeight.w600,
                       letterSpacing: 0.5,
                     ),
@@ -141,30 +124,6 @@ class PaymentSuccessPage extends StatelessWidget {
           ],
         ),
       ),
-    );
-  }
-
-  Widget _buildInfoRow(String label, String value) {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      children: [
-        Text(
-          label,
-          style: TextStyle(
-            fontSize: 14,
-            color: Colors.grey[700],
-            fontWeight: FontWeight.w500,
-          ),
-        ),
-        Text(
-          value,
-          style: const TextStyle(
-            fontSize: 14,
-            color: Colors.black87,
-            fontWeight: FontWeight.w600,
-          ),
-        ),
-      ],
     );
   }
 }

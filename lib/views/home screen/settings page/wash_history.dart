@@ -38,18 +38,24 @@ class _WashHistoryPageState extends State<WashHistoryPage> {
 
       if (!mounted) return;
 
-      // Sort by date (most recent first)
+      // Sort by date (most recent first) - improved sorting logic
       final sortedHistory = List<Map<String, dynamic>>.from(history);
       sortedHistory.sort((a, b) {
         try {
-          final dateA = DateTime.parse(
-            a['device_booked_user_end_time']?.toString() ?? '',
-          );
-          final dateB = DateTime.parse(
-            b['device_booked_user_end_time']?.toString() ?? '',
-          );
+          final aTimeStr = a['device_booked_user_end_time']?.toString();
+          final bTimeStr = b['device_booked_user_end_time']?.toString();
+
+          // Handle null or empty strings
+          if (aTimeStr == null || aTimeStr.isEmpty) return 1;
+          if (bTimeStr == null || bTimeStr.isEmpty) return -1;
+
+          final dateA = DateTime.parse(aTimeStr);
+          final dateB = DateTime.parse(bTimeStr);
+
+          // Sort descending (most recent first)
           return dateB.compareTo(dateA);
         } catch (e) {
+          debugPrint('⚠️ [WashHistory] Error sorting dates: $e');
           return 0;
         }
       });
@@ -60,7 +66,9 @@ class _WashHistoryPageState extends State<WashHistoryPage> {
         _isLoading = false;
       });
 
-      debugPrint('✅ Loaded ${_historyList.length} history records');
+      debugPrint(
+        '✅ [WashHistory] Loaded ${_historyList.length} history records (sorted by recent)',
+      );
     } catch (e) {
       if (!mounted) return;
 
@@ -96,7 +104,7 @@ class _WashHistoryPageState extends State<WashHistoryPage> {
         }
       });
 
-      debugPrint('❌ Error loading history: $e');
+      debugPrint('❌ [WashHistory] Error loading history: $e');
     }
   }
 
@@ -158,11 +166,13 @@ class _WashHistoryPageState extends State<WashHistoryPage> {
 
   /// Format date and time
   String _formatDateTime(String dateTimeString) {
+    if (dateTimeString.isEmpty) return 'N/A';
+
     try {
       final dateTime = DateTime.parse(dateTimeString).toLocal();
       return DateFormat('dd/MM/yyyy hh:mma').format(dateTime).toLowerCase();
     } catch (e) {
-      debugPrint('Error formatting date: $e');
+      debugPrint('⚠️ [WashHistory] Error formatting date: $e');
       return dateTimeString;
     }
   }
@@ -232,15 +242,13 @@ class _WashHistoryPageState extends State<WashHistoryPage> {
     final deviceId = booking['deviceid']?.toString() ?? 'N/A';
     final endTime = booking['device_booked_user_end_time']?.toString() ?? '';
 
-    // ✅ FIX: Properly parse and format amount
+    // Parse and format amount
     final amountValue = booking['booked_user_amount'];
     String amount = '0.00';
     if (amountValue != null) {
       final parsedAmount = double.tryParse(amountValue.toString()) ?? 0.0;
       amount = parsedAmount.toStringAsFixed(2);
     }
-
-    debugPrint('💰 Amount for device $deviceId: $amount (raw: $amountValue)');
 
     return Container(
       margin: const EdgeInsets.only(bottom: 16),

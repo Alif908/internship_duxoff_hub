@@ -47,62 +47,60 @@ class _LoginPageState extends State<LoginPage> {
     }
   }
 
-  
+  Future<void> _handleContinue() async {
+    // ... existing validation code ...
 
-Future<void> _handleContinue() async {
-  // ... existing validation code ...
+    setState(() => _isLoading = true);
 
-  setState(() => _isLoading = true);
+    try {
+      final mobile = _mobileController.text.trim();
+      final name = _nameController.text.trim();
 
-  try {
-    final mobile = _mobileController.text.trim();
-    final name = _nameController.text.trim();
+      // 🔹 CALL SEND OTP API
+      final response = await AuthApi.sendOtp(mobile);
 
-    // 🔹 CALL SEND OTP API
-    final response = await AuthApi.sendOtp(mobile);
+      if (!response.containsKey('otp')) {
+        throw Exception('OTP sending failed');
+      }
 
-    if (!response.containsKey('otp')) {
-      throw Exception('OTP sending failed');
-    }
+      final String otpFromApi = response['otp']; // DEV ONLY
+      final String userType = response['user_type'] ?? 'New';
 
-    final String otpFromApi = response['otp']; // DEV ONLY
-    final String userType = response['user_type'] ?? 'New';
+      // 🔹 SAVE USER DATA + OTP IN SHARED PREFERENCES
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('user_name', name);
+      await prefs.setString('user_mobile', mobile);
 
-    // 🔹 SAVE USER DATA + OTP IN SHARED PREFERENCES
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString('user_name', name);
-    await prefs.setString('user_mobile', mobile);
-    
-    // ✅ STORE OTP (for development/testing only)
-    await prefs.setString('current_otp', otpFromApi);
-    
-    // Optional: Store OTP timestamp for expiration checking
-    await prefs.setString('otp_timestamp', DateTime.now().toIso8601String());
+      // ✅ STORE OTP (for development/testing only)
+      await prefs.setString('current_otp', otpFromApi);
 
-    setState(() => _isLoading = false);
+      // Optional: Store OTP timestamp for expiration checking
+      await prefs.setString('otp_timestamp', DateTime.now().toIso8601String());
 
-    _showSnackBar('OTP sent successfully!', isError: false);
+      setState(() => _isLoading = false);
 
-    // 🔹 NAVIGATE TO OTP PAGE
-    if (mounted) {
-      await Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (_) => OtpVerifyPage(
-            mobileNumber: mobile,
-            otpFromApi: otpFromApi,  // Still pass for backward compatibility
-            userType: userType,
-            userName: name,
+      _showSnackBar('OTP sent successfully!', isError: false);
+
+      // 🔹 NAVIGATE TO OTP PAGE
+      if (mounted) {
+        await Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => OtpVerifyPage(
+              mobileNumber: mobile,
+              otpFromApi: otpFromApi, // Still pass for backward compatibility
+              userType: userType,
+              userName: name,
+            ),
           ),
-        ),
-      );
+        );
+      }
+    } catch (e) {
+      setState(() => _isLoading = false);
+
+      // ... existing error handling ...
     }
-  } catch (e) {
-    setState(() => _isLoading = false);
-    
-    // ... existing error handling ...
   }
-}
 
   /// Show snackbar with custom styling
   void _showSnackBar(String message, {bool isError = false}) {

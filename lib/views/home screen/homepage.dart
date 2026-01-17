@@ -31,15 +31,15 @@ class _HomePageState extends State<HomePage> {
     _fetchRunningJob();
     _fetchHistory();
 
-    // ✅ Refresh API data every 45 seconds
+    // Refresh API data every 45 seconds
     _apiRefreshTimer = Timer.periodic(const Duration(seconds: 45), (timer) {
       if (mounted) {
         _fetchRunningJob();
       }
     });
 
-    // ✅ Update progress bar every 10 seconds
-    _progressTimer = Timer.periodic(const Duration(seconds: 10), (timer) {
+    // Update progress bar every 1 second for smooth animation
+    _progressTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
       if (mounted && _hasRunningJob) {
         setState(() {}); // Rebuild to update progress
       }
@@ -58,44 +58,102 @@ class _HomePageState extends State<HomePage> {
     required String? startTimeString,
     required String? endTimeString,
   }) {
-    // 1️⃣ Validate input
-    if (startTimeString == null ||
-        endTimeString == null ||
-        startTimeString.isEmpty ||
-        endTimeString.isEmpty) {
+    if (endTimeString == null || endTimeString.isEmpty) {
+      debugPrint('❌ Progress: No end time provided');
       return 0.0;
     }
 
     try {
-      // 2️⃣ Parse times
-      final DateTime startTime = DateTime.parse(startTimeString).toLocal();
-      final DateTime endTime = DateTime.parse(endTimeString).toLocal();
       final DateTime now = DateTime.now();
+      DateTime endTime = DateTime.parse(endTimeString);
 
-      // 3️⃣ If job not started yet
-      if (now.isBefore(startTime)) {
-        return 0.0;
+      // Convert to local if needed
+      if (endTime.isUtc || endTimeString.endsWith('Z')) {
+        endTime = endTime.toLocal();
       }
 
-      // 4️⃣ If job finished
+      debugPrint('⏰ [HomePage] Current Time: $now');
+      debugPrint('⏰ [HomePage] End Time: $endTime');
+
+      // If job is already completed
       if (now.isAfter(endTime)) {
+        debugPrint('✅ [HomePage] Job Completed: 100%');
         return 1.0;
       }
 
-      // 5️⃣ Calculate progress
-      final int totalSeconds = endTime.difference(startTime).inSeconds;
-      final int elapsedSeconds = now.difference(startTime).inSeconds;
+      // If we have start time, use it for accurate progress
+      if (startTimeString != null && startTimeString.isNotEmpty) {
+        DateTime startTime = DateTime.parse(startTimeString);
 
-      if (totalSeconds <= 0) {
-        return 0.0;
+        if (startTime.isUtc || startTimeString.endsWith('Z')) {
+          startTime = startTime.toLocal();
+        }
+
+        debugPrint('⏰ [HomePage] Start Time: $startTime');
+
+        // If job hasn't started yet, return 0
+        if (now.isBefore(startTime)) {
+          debugPrint('⏳ [HomePage] Job not started yet: 0%');
+          return 0.0;
+        }
+
+        // Calculate progress based on start and end time
+        final int totalSeconds = endTime.difference(startTime).inSeconds;
+        final int elapsedSeconds = now.difference(startTime).inSeconds;
+
+        debugPrint(
+          '📊 [HomePage] Total Duration: ${totalSeconds}s (${(totalSeconds / 60).toStringAsFixed(1)} min)',
+        );
+        debugPrint(
+          '📊 [HomePage] Elapsed: ${elapsedSeconds}s (${(elapsedSeconds / 60).toStringAsFixed(1)} min)',
+        );
+
+        if (totalSeconds <= 0) {
+          debugPrint('⚠️ [HomePage] Invalid duration');
+          return 0.0;
+        }
+
+        double progress = elapsedSeconds / totalSeconds;
+        int progressPercent = (progress * 100).toInt();
+
+        debugPrint('🔄 [HomePage] Progress: $progressPercent% completed');
+
+        return progress.clamp(0.0, 1.0);
+      } else {
+        debugPrint('⚠️ [HomePage] No start time - using estimation');
+
+        // No start time - estimate based on typical wash duration (assume 15 min default)
+        final Duration remainingTime = endTime.difference(now);
+        final int remainingMinutes = remainingTime.inMinutes;
+
+        debugPrint('📊 [HomePage] Remaining: ${remainingMinutes} minutes');
+
+        // Assume total duration was 15 minutes if we don't know
+        const int assumedTotalMinutes = 15;
+        final int elapsedMinutes = assumedTotalMinutes - remainingMinutes;
+
+        debugPrint(
+          '📊 [HomePage] Estimated Elapsed: $elapsedMinutes minutes (assumed total: $assumedTotalMinutes min)',
+        );
+
+        if (elapsedMinutes <= 0) {
+          debugPrint('🔄 [HomePage] Progress: 5% completed (minimum)');
+          return 0.05; // Show at least 5% to indicate it's running
+        }
+
+        double progress = elapsedMinutes / assumedTotalMinutes;
+        int progressPercent = (progress * 100).toInt();
+
+        debugPrint(
+          '🔄 [HomePage] Progress: $progressPercent% completed (estimated)',
+        );
+
+        return progress.clamp(0.05, 1.0);
       }
-
-      double progress = elapsedSeconds / totalSeconds;
-
-      // 6️⃣ Clamp value between 0 and 1
-      return progress.clamp(0.0, 1.0);
     } catch (e) {
-      debugPrint('⚠️ Error calculating progress: $e');
+      debugPrint('❌ [HomePage] Error calculating progress: $e');
+      debugPrint('❌ [HomePage] Start Time String: $startTimeString');
+      debugPrint('❌ [HomePage] End Time String: $endTimeString');
       return 0.0;
     }
   }
@@ -115,23 +173,23 @@ class _HomePageState extends State<HomePage> {
     });
 
     try {
-      // 1️⃣ Call API
+      // Call API
       final List<dynamic> jobs = await HomeApi.getRunningJobs();
 
       if (!mounted) return;
 
-      // 2️⃣ If API returns empty list
+      // If API returns empty list
       if (jobs.isEmpty) {
         setState(() {
           _hasRunningJob = false;
           _runningJob = null;
           _isLoadingJob = false;
         });
-        debugPrint('ℹ️ No running jobs found');
+        debugPrint('ℹ️ [HomePage] No running jobs found');
         return;
       }
 
-      // 3️⃣ Filter ONLY running jobs (end time is in future)
+      // Filter ONLY running jobs (end time is in future)
       final DateTime now = DateTime.now();
 
       final List<dynamic> activeJobs = jobs.where((job) {
@@ -148,12 +206,12 @@ class _HomePageState extends State<HomePage> {
           final DateTime endTime = DateTime.parse(endTimeString).toLocal();
           return now.isBefore(endTime); // still running
         } catch (e) {
-          debugPrint('⚠️ Invalid end time format: $endTimeString');
+          debugPrint('⚠️ [HomePage] Invalid end time format: $endTimeString');
           return false;
         }
       }).toList();
 
-      // 4️⃣ Update UI with first active job
+      // Update UI with first active job
       if (activeJobs.isNotEmpty) {
         setState(() {
           _runningJob = activeJobs[0] as Map<String, dynamic>;
@@ -161,14 +219,16 @@ class _HomePageState extends State<HomePage> {
           _isLoadingJob = false;
         });
 
-        debugPrint('✅ Running job loaded: ${activeJobs.length} active');
+        debugPrint(
+          '✅ [HomePage] Running job loaded: ${activeJobs.length} active',
+        );
       } else {
         setState(() {
           _hasRunningJob = false;
           _runningJob = null;
           _isLoadingJob = false;
         });
-        debugPrint('ℹ️ No active running jobs');
+        debugPrint('ℹ️ [HomePage] No active running jobs');
       }
     } catch (e) {
       if (!mounted) return;
@@ -196,12 +256,14 @@ class _HomePageState extends State<HomePage> {
         }
       });
 
-      debugPrint('❌ Error fetching running job: $e');
+      debugPrint('❌ [HomePage] Error fetching running job: $e');
     }
   }
 
-  /// Fetch history from API
+  /// Fetch history from API - only get 2 most recent items
   Future<void> _fetchHistory() async {
+    if (!mounted) return;
+
     setState(() {
       _isLoadingHistory = true;
       _errorMessageHistory = '';
@@ -212,13 +274,37 @@ class _HomePageState extends State<HomePage> {
 
       if (!mounted) return;
 
+      // Sort history by end time (most recent first) - improved sorting
+      final sortedHistory = List<dynamic>.from(history);
+      sortedHistory.sort((a, b) {
+        try {
+          final aTimeStr = a['device_booked_user_end_time']?.toString();
+          final bTimeStr = b['device_booked_user_end_time']?.toString();
+
+          // Handle null or empty strings - push them to the end
+          if (aTimeStr == null || aTimeStr.isEmpty) return 1;
+          if (bTimeStr == null || bTimeStr.isEmpty) return -1;
+
+          final aDate = DateTime.parse(aTimeStr);
+          final bDate = DateTime.parse(bTimeStr);
+
+          // Sort descending (most recent first)
+          return bDate.compareTo(aDate);
+        } catch (e) {
+          debugPrint('⚠️ [HomePage] Error sorting history: $e');
+          return 0;
+        }
+      });
+
       setState(() {
-        // Get only the latest 3 items for homepage
-        _historyList = history.take(3).toList();
+        // Get only the latest 2 items for homepage
+        _historyList = sortedHistory.take(2).toList();
         _isLoadingHistory = false;
       });
 
-      debugPrint('✅ Loaded ${_historyList.length} history items for homepage');
+      debugPrint(
+        '✅ [HomePage] Loaded ${_historyList.length} recent history items (sorted)',
+      );
     } catch (e) {
       if (!mounted) return;
 
@@ -253,7 +339,7 @@ class _HomePageState extends State<HomePage> {
               : 'Failed to load history';
         }
       });
-      debugPrint('❌ Error fetching history: $e');
+      debugPrint('❌ [HomePage] Error fetching history: $e');
     }
   }
 
@@ -270,7 +356,7 @@ class _HomePageState extends State<HomePage> {
       final dateTime = DateTime.parse(dateTimeString).toLocal();
       return DateFormat('dd/MM/yyyy hh:mm a').format(dateTime);
     } catch (e) {
-      debugPrint('⚠️ Error formatting date: $e');
+      debugPrint('⚠️ [HomePage] Error formatting date: $e');
       return dateTimeString;
     }
   }
@@ -479,7 +565,6 @@ class _HomePageState extends State<HomePage> {
 
     // Parse job data
     final hubName = _runningJob!['hubname']?.toString() ?? 'Unknown Hub';
-    final deviceType = _runningJob!['devicetype']?.toString() ?? 'Device';
     final deviceId = _runningJob!['deviceid']?.toString() ?? 'N/A';
     final machineId = '#$deviceId';
 
@@ -493,7 +578,7 @@ class _HomePageState extends State<HomePage> {
         endTime = DateFormat('HH:mm').format(endTimeDate);
       } catch (e) {
         endTime = '--:--';
-        debugPrint('⚠️ Error parsing end time: $e');
+        debugPrint('⚠️ [HomePage] Error parsing end time: $e');
       }
     }
 
@@ -539,15 +624,19 @@ class _HomePageState extends State<HomePage> {
                       Text(
                         'Hub Name',
                         style: TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w600,
-                          color: Colors.grey[900],
+                          fontSize: 12,
+                          fontWeight: FontWeight.w500,
+                          color: Colors.grey[600],
                         ),
                       ),
                       const SizedBox(height: 4),
                       Text(
                         hubName.toLowerCase(),
-                        style: TextStyle(fontSize: 13, color: Colors.grey[600]),
+                        style: const TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.black87,
+                        ),
                       ),
                     ],
                   ),
@@ -559,15 +648,19 @@ class _HomePageState extends State<HomePage> {
                     Text(
                       'Machine Name',
                       style: TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600,
-                        color: Colors.grey[900],
+                        fontSize: 12,
+                        fontWeight: FontWeight.w500,
+                        color: Colors.grey[600],
                       ),
                     ),
                     const SizedBox(height: 4),
                     Text(
                       machineId,
-                      style: TextStyle(fontSize: 13, color: Colors.grey[600]),
+                      style: const TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.black87,
+                      ),
                     ),
                   ],
                 ),
@@ -577,9 +670,9 @@ class _HomePageState extends State<HomePage> {
             // Bottom row: Status and End time
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              crossAxisAlignment: CrossAxisAlignment.start,
+              crossAxisAlignment: CrossAxisAlignment.end,
               children: [
-                // Left: Status
+                // Left: Status with progress bar
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -587,22 +680,37 @@ class _HomePageState extends State<HomePage> {
                       Text(
                         'Status',
                         style: TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w600,
-                          color: Colors.grey[900],
+                          fontSize: 12,
+                          fontWeight: FontWeight.w500,
+                          color: Colors.grey[600],
                         ),
                       ),
-                      const SizedBox(height: 4),
+                      const SizedBox(height: 6),
                       Text(
                         statusText,
                         style: const TextStyle(
                           fontSize: 13,
+                          fontWeight: FontWeight.w600,
                           color: Color(0xFF4A90E2),
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      // Progress bar
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(4),
+                        child: LinearProgressIndicator(
+                          value: progress,
+                          backgroundColor: const Color(0xFFE8E8E8),
+                          valueColor: const AlwaysStoppedAnimation<Color>(
+                            Color(0xFF4A90E2),
+                          ),
+                          minHeight: 6,
                         ),
                       ),
                     ],
                   ),
                 ),
+                const SizedBox(width: 24),
                 // Right: End time
                 Column(
                   crossAxisAlignment: CrossAxisAlignment.end,
@@ -610,32 +718,23 @@ class _HomePageState extends State<HomePage> {
                     Text(
                       'End time',
                       style: TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600,
-                        color: Colors.grey[900],
+                        fontSize: 12,
+                        fontWeight: FontWeight.w500,
+                        color: Colors.grey[600],
                       ),
                     ),
                     const SizedBox(height: 4),
                     Text(
                       endTime,
-                      style: TextStyle(fontSize: 13, color: Colors.grey[600]),
+                      style: const TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.black87,
+                      ),
                     ),
                   ],
                 ),
               ],
-            ),
-            const SizedBox(height: 12),
-            // Progress bar
-            ClipRRect(
-              borderRadius: BorderRadius.circular(2),
-              child: LinearProgressIndicator(
-                value: progress,
-                backgroundColor: const Color(0xFFE8E8E8),
-                valueColor: const AlwaysStoppedAnimation<Color>(
-                  Color(0xFF4A90E2),
-                ),
-                minHeight: 6,
-              ),
             ),
           ],
         ),
@@ -690,44 +789,15 @@ class _HomePageState extends State<HomePage> {
       children: [
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16),
-          child: Row(
+          child: const Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              const Text(
+              Text(
                 'History',
                 style: TextStyle(
                   fontSize: 18,
                   fontWeight: FontWeight.bold,
                   color: Colors.black,
-                ),
-              ),
-              GestureDetector(
-                onTap: () {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text(
-                        'Tap "History" in bottom navigation to view all',
-                      ),
-                      duration: Duration(seconds: 2),
-                    ),
-                  );
-                },
-                child: Row(
-                  children: [
-                    Text(
-                      'View All',
-                      style: TextStyle(
-                        fontSize: 14,
-                        color: Colors.blue[700],
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                    Icon(
-                      Icons.chevron_right,
-                      color: Colors.blue[700],
-                      size: 20,
-                    ),
-                  ],
                 ),
               ),
             ],

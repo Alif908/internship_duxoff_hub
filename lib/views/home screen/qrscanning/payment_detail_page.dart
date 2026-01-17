@@ -313,17 +313,33 @@ class _PaymentDetailsPageState extends State<PaymentDetailsPage> {
     try {
       // Get user credentials from SharedPreferences
       final prefs = await SharedPreferences.getInstance();
-      final mobile = prefs.getString('usermobile');
-      final token = prefs.getString('sessionToken');
-      final userId = prefs.getInt('userid') ?? 0;
 
-      if (mobile == null || token == null) {
+      // ✅ FIX: Try both key variations to ensure we get the values
+      final mobile =
+          prefs.getString('usermobile') ?? prefs.getString('user_mobile');
+      final token =
+          prefs.getString('sessionToken') ?? prefs.getString('session_token');
+      final userId = prefs.getInt('userid') ?? prefs.getInt('user_id') ?? 0;
+
+      debugPrint('📱 Checking credentials...');
+      debugPrint('📱 Mobile from usermobile: ${prefs.getString('usermobile')}');
+      debugPrint(
+        '📱 Mobile from user_mobile: ${prefs.getString('user_mobile')}',
+      );
+      debugPrint(
+        '🔑 Token from sessionToken: ${prefs.getString('sessionToken')?.substring(0, 8)}...',
+      );
+      debugPrint(
+        '🔑 Token from session_token: ${prefs.getString('session_token')?.substring(0, 8)}...',
+      );
+
+      if (mobile == null || mobile.isEmpty || token == null || token.isEmpty) {
         throw Exception('User not authenticated. Please login again.');
       }
 
-      debugPrint('📱 Mobile: $mobile');
-      debugPrint('🔑 Token: ${token.substring(0, 8)}...');
-      debugPrint('👤 User ID: $userId');
+      debugPrint('✅ Mobile: $mobile');
+      debugPrint('✅ Token: ${token.substring(0, 8)}...');
+      debugPrint('✅ User ID: $userId');
 
       // Step 1: Create payment order
       debugPrint('💳 Creating payment order...');

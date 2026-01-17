@@ -10,21 +10,35 @@ class HomeApi {
   static const Duration timeoutDuration = Duration(seconds: 30);
 
   /// Helper method to get user credentials
-  static Future<Map<String, String>> _getUserCredentials() async {
-    final prefs = await SharedPreferences.getInstance();
-    final mobile = prefs.getString('user_mobile');
-    final token = prefs.getString('session_token');
+  /// Helper method to get user credentials
+/// ✅ FIXED: Now checks both key variations for compatibility
+static Future<Map<String, String>> _getUserCredentials() async {
+  final prefs = await SharedPreferences.getInstance();
+  
+  // Try both key variations (usermobile and user_mobile)
+  final mobile = prefs.getString('usermobile') ?? 
+                 prefs.getString('user_mobile');
+  
+  // Try both key variations (sessionToken and session_token)
+  final token = prefs.getString('sessionToken') ?? 
+                prefs.getString('session_token');
 
-    if (mobile == null || mobile.isEmpty) {
-      throw Exception('Mobile number not found. Please login again.');
-    }
+  print('🔍 Credential Check:');
+  print('   usermobile: ${prefs.getString('usermobile')}');
+  print('   user_mobile: ${prefs.getString('user_mobile')}');
+  print('   sessionToken: ${prefs.getString('sessionToken')?.substring(0, 8)}...');
+  print('   session_token: ${prefs.getString('session_token')?.substring(0, 8)}...');
 
-    if (token == null || token.isEmpty) {
-      throw Exception('Session token not found. Please login again.');
-    }
-
-    return {'mobile': mobile, 'token': token};
+  if (mobile == null || mobile.isEmpty) {
+    throw Exception('Mobile number not found. Please login again.');
   }
+
+  if (token == null || token.isEmpty) {
+    throw Exception('Session token not found. Please login again.');
+  }
+
+  return {'mobile': mobile, 'token': token};
+}
 
   /// GET USER PROFILE
   static Future<Map<String, dynamic>> getUserProfile() async {

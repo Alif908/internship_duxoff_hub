@@ -18,26 +18,34 @@ class _RunningJobsPageState extends State<RunningJobsPage> {
   String _errorMessage = '';
 
   List<dynamic> _runningJobsList = [];
-  List<dynamic> _recentlyCompletedJobs = []; // ✅ NEW: Track recently completed
+  List<dynamic> _recentlyCompletedJobs = [];
   Timer? _progressTimer;
   Timer? _apiRefreshTimer;
+  Timer? _completionCheckTimer;
 
   @override
   void initState() {
     super.initState();
     _fetchRunningJob();
 
-    // Refresh API data every 45 seconds
-    _apiRefreshTimer = Timer.periodic(const Duration(seconds: 45), (timer) {
+    // Refresh API data every 30 seconds
+    _apiRefreshTimer = Timer.periodic(const Duration(seconds: 30), (timer) {
       if (mounted) {
         _fetchRunningJob();
       }
     });
 
-    // Update progress bar every 10 seconds
-    _progressTimer = Timer.periodic(const Duration(seconds: 10), (timer) {
-      if (mounted && (_hasRunningJobs || _recentlyCompletedJobs.isNotEmpty)) {
+    // Update progress bar every 1 second for smooth animation
+    _progressTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (mounted && _hasRunningJobs) {
         setState(() {}); // Rebuild to update progress
+      }
+    });
+
+    // Check for completed jobs every 5 seconds
+    _completionCheckTimer = Timer.periodic(const Duration(seconds: 5), (timer) {
+      if (mounted) {
+        _checkAndMoveCompletedJobs();
       }
     });
   }
@@ -46,7 +54,84 @@ class _RunningJobsPageState extends State<RunningJobsPage> {
   void dispose() {
     _progressTimer?.cancel();
     _apiRefreshTimer?.cancel();
+    _completionCheckTimer?.cancel();
     super.dispose();
+  }
+
+  /// Check if any jobs just completed and move them to recently completed
+  void _checkAndMoveCompletedJobs() {
+    if (_runningJobsList.isEmpty) return;
+
+    final DateTime now = DateTime.now();
+    final List<dynamic> stillRunning = [];
+    final List<dynamic> justCompleted = [];
+
+    for (var job in _runningJobsList) {
+      final String? endTimeString = job['device_booked_user_end_time']
+          ?.toString();
+
+      if (endTimeString != null && endTimeString.isNotEmpty) {
+        try {
+          DateTime endTime = DateTime.parse(endTimeString);
+          if (endTime.isUtc || endTimeString.endsWith('Z')) {
+            endTime = endTime.toLocal();
+          }
+
+          if (now.isBefore(endTime)) {
+            // Still running
+            stillRunning.add(job);
+          } else {
+            // Just completed
+            justCompleted.add(job);
+            debugPrint('✅ Job completed and moved: ${job['deviceid']}');
+          }
+        } catch (e) {
+          stillRunning.add(job); // Keep if we can't parse
+        }
+      } else {
+        stillRunning.add(job);
+      }
+    }
+
+    // If any job completed, update the lists
+    if (justCompleted.isNotEmpty && mounted) {
+      setState(() {
+        _runningJobsList = stillRunning;
+
+        // Add to recently completed (keep only last 5 minutes)
+        for (var job in justCompleted) {
+          if (!_recentlyCompletedJobs.any(
+            (existing) =>
+                existing['deviceid'] == job['deviceid'] &&
+                existing['device_booked_user_end_time'] ==
+                    job['device_booked_user_end_time'],
+          )) {
+            _recentlyCompletedJobs.insert(0, job); // Add to beginning
+          }
+        }
+
+        _hasRunningJobs = stillRunning.isNotEmpty;
+      });
+
+      debugPrint('📦 Moved ${justCompleted.length} jobs to completed');
+
+      // Auto-remove completed jobs after 5 minutes
+      Future.delayed(const Duration(minutes: 5), () {
+        if (mounted) {
+          setState(() {
+            for (var job in justCompleted) {
+              _recentlyCompletedJobs.removeWhere(
+                (item) =>
+                    item['deviceid'] == job['deviceid'] &&
+                    item['device_booked_user_end_time'] ==
+                        job['device_booked_user_end_time'],
+              );
+            }
+          });
+          debugPrint('🗑️ Auto-removed completed jobs after 5 minutes');
+        }
+      });
+    }
   }
 
   /// Fetch running jobs from API
@@ -71,7 +156,6 @@ class _RunningJobsPageState extends State<RunningJobsPage> {
         setState(() {
           _hasRunningJobs = false;
           _runningJobsList = [];
-          _recentlyCompletedJobs = [];
           _isLoading = false;
         });
         debugPrint('ℹ️ No running jobs found');
@@ -80,7 +164,6 @@ class _RunningJobsPageState extends State<RunningJobsPage> {
 
       final DateTime now = DateTime.now();
       final List<dynamic> activeJobs = [];
-      final List<dynamic> completedJobs = [];
 
       for (var job in jobs) {
         if (job == null || job is! Map) continue;
@@ -90,18 +173,16 @@ class _RunningJobsPageState extends State<RunningJobsPage> {
         if (endTimeString == null || endTimeString.isEmpty) continue;
 
         try {
-          final DateTime endTime = DateTime.parse(endTimeString).toLocal();
-          final Duration timeSinceEnd = now.difference(endTime);
-
-          // ✅ Categorize jobs
-          if (now.isBefore(endTime)) {
-            // Still running
-            activeJobs.add(job);
-          } else if (timeSinceEnd.inMinutes < 30) {
-            // Completed within last 30 minutes - show as "recently completed"
-            completedJobs.add(job);
+          DateTime endTime = DateTime.parse(endTimeString);
+          if (endTime.isUtc || endTimeString.endsWith('Z')) {
+            endTime = endTime.toLocal();
           }
-          // Jobs completed >30 min ago are ignored (in history now)
+
+          if (now.isBefore(endTime)) {
+            // Still running - add to active jobs
+            activeJobs.add(job);
+          }
+          // Don't add completed jobs from API - they should move to history automatically
         } catch (e) {
           debugPrint('⚠️ Invalid end time format: $endTimeString');
         }
@@ -109,14 +190,11 @@ class _RunningJobsPageState extends State<RunningJobsPage> {
 
       setState(() {
         _runningJobsList = activeJobs;
-        _recentlyCompletedJobs = completedJobs;
         _hasRunningJobs = activeJobs.isNotEmpty;
         _isLoading = false;
       });
 
-      debugPrint(
-        '✅ Active: ${activeJobs.length}, Recently Completed: ${completedJobs.length}',
-      );
+      debugPrint('✅ Active jobs: ${activeJobs.length}');
     } catch (e) {
       if (!mounted) return;
 
@@ -125,7 +203,6 @@ class _RunningJobsPageState extends State<RunningJobsPage> {
       setState(() {
         _hasRunningJobs = false;
         _runningJobsList = [];
-        _recentlyCompletedJobs = [];
         _isLoading = false;
 
         if (errorText.contains('not authenticated') ||
@@ -156,56 +233,54 @@ class _RunningJobsPageState extends State<RunningJobsPage> {
     required String? startTimeString,
     required String? endTimeString,
   }) {
-    if (startTimeString == null ||
-        endTimeString == null ||
-        startTimeString.isEmpty ||
-        endTimeString.isEmpty) {
+    if (endTimeString == null || endTimeString.isEmpty) {
       return 0.0;
     }
 
     try {
-      final DateTime startTime = DateTime.parse(startTimeString).toLocal();
-      final DateTime endTime = DateTime.parse(endTimeString).toLocal();
       final DateTime now = DateTime.now();
+      DateTime endTime = DateTime.parse(endTimeString);
 
-      if (now.isBefore(startTime)) return 0.0;
-      if (now.isAfter(endTime)) return 1.0;
+      if (endTime.isUtc || endTimeString.endsWith('Z')) {
+        endTime = endTime.toLocal();
+      }
 
-      final int totalSeconds = endTime.difference(startTime).inSeconds;
-      final int elapsedSeconds = now.difference(startTime).inSeconds;
+      if (now.isAfter(endTime)) {
+        return 1.0;
+      }
 
-      if (totalSeconds <= 0) return 0.0;
+      if (startTimeString != null && startTimeString.isNotEmpty) {
+        DateTime startTime = DateTime.parse(startTimeString);
 
-      double progress = elapsedSeconds / totalSeconds;
-      return progress.clamp(0.0, 1.0);
-    } catch (e) {
-      debugPrint('⚠️ Error calculating progress: $e');
-      return 0.0;
-    }
-  }
+        if (startTime.isUtc || startTimeString.endsWith('Z')) {
+          startTime = startTime.toLocal();
+        }
 
-  String _calculateRemainingTime(String? endTimeString) {
-    if (endTimeString == null || endTimeString.isEmpty) return '--';
+        if (now.isBefore(startTime)) {
+          return 0.0;
+        }
 
-    try {
-      final DateTime endTime = DateTime.parse(endTimeString).toLocal();
-      final DateTime now = DateTime.now();
-      final Duration remaining = endTime.difference(now);
+        final int totalSeconds = endTime.difference(startTime).inSeconds;
+        final int elapsedSeconds = now.difference(startTime).inSeconds;
 
-      if (remaining.isNegative) return 'Completed';
+        if (totalSeconds <= 0) return 0.0;
 
-      final int hours = remaining.inHours;
-      final int minutes = remaining.inMinutes.remainder(60);
-
-      if (hours > 0) {
-        return '${hours}h ${minutes}m left';
-      } else if (minutes > 0) {
-        return '${minutes}m left';
+        double progress = elapsedSeconds / totalSeconds;
+        return progress.clamp(0.0, 1.0);
       } else {
-        return 'Finishing soon';
+        final Duration remainingTime = endTime.difference(now);
+        final int remainingMinutes = remainingTime.inMinutes;
+
+        const int assumedTotalMinutes = 15;
+        final int elapsedMinutes = assumedTotalMinutes - remainingMinutes;
+
+        if (elapsedMinutes <= 0) return 0.05;
+
+        double progress = elapsedMinutes / assumedTotalMinutes;
+        return progress.clamp(0.05, 1.0);
       }
     } catch (e) {
-      return '--';
+      return 0.0;
     }
   }
 
@@ -223,6 +298,7 @@ class _RunningJobsPageState extends State<RunningJobsPage> {
           onPressed: () {
             _progressTimer?.cancel();
             _apiRefreshTimer?.cancel();
+            _completionCheckTimer?.cancel();
             Navigator.pushReplacement(
               context,
               MaterialPageRoute(builder: (context) => const QKWashHome()),
@@ -244,7 +320,7 @@ class _RunningJobsPageState extends State<RunningJobsPage> {
                   alignment: Alignment.centerLeft,
                   padding: const EdgeInsets.only(left: 56, bottom: 8),
                   child: Text(
-                    '${_runningJobsList.length} active, ${_recentlyCompletedJobs.length} recently completed',
+                    '${_runningJobsList.length} active • ${_recentlyCompletedJobs.length} recently completed',
                     style: TextStyle(fontSize: 13, color: Colors.grey[600]),
                   ),
                 ),
@@ -264,7 +340,7 @@ class _RunningJobsPageState extends State<RunningJobsPage> {
             else if (_runningJobsList.isEmpty && _recentlyCompletedJobs.isEmpty)
               _buildEmptyCard()
             else ...[
-              // ✅ Active Jobs Section
+              // Active Jobs Section
               if (_runningJobsList.isNotEmpty) ...[
                 Padding(
                   padding: const EdgeInsets.only(bottom: 12),
@@ -285,7 +361,7 @@ class _RunningJobsPageState extends State<RunningJobsPage> {
                 ),
               ],
 
-              // ✅ Recently Completed Section
+              // Recently Completed Section (will disappear after 5 minutes)
               if (_recentlyCompletedJobs.isNotEmpty) ...[
                 Padding(
                   padding: EdgeInsets.only(
@@ -313,7 +389,7 @@ class _RunningJobsPageState extends State<RunningJobsPage> {
                           borderRadius: BorderRadius.circular(10),
                         ),
                         child: Text(
-                          'Last 30 min',
+                          'Last 5 min',
                           style: TextStyle(
                             fontSize: 11,
                             fontWeight: FontWeight.w600,
@@ -413,13 +489,14 @@ class _RunningJobsPageState extends State<RunningJobsPage> {
     required bool isActive,
   }) {
     final hubName = job['hubname']?.toString() ?? 'Unknown Hub';
-    final deviceType = job['devicetype']?.toString() ?? 'Device';
     final deviceId = job['deviceid']?.toString() ?? 'N/A';
     final machineId = '#$deviceId';
 
+    final startTimeString = job['device_booked_user_start_time']?.toString();
+    final endTimeString = job['device_booked_user_end_time']?.toString();
+
     String endTime = '--:--';
-    String endTimeString = job['device_booked_user_end_time']?.toString() ?? '';
-    if (endTimeString.isNotEmpty) {
+    if (endTimeString != null && endTimeString.isNotEmpty) {
       try {
         final DateTime endTimeDate = DateTime.parse(endTimeString).toLocal();
         endTime = DateFormat('HH:mm').format(endTimeDate);
@@ -429,32 +506,21 @@ class _RunningJobsPageState extends State<RunningJobsPage> {
     }
 
     double progress = _calculateProgress(
-      startTimeString: job['device_booked_user_start_time'],
-      endTimeString: job['device_booked_user_end_time'],
+      startTimeString: startTimeString,
+      endTimeString: endTimeString,
     );
-
-    String statusText;
-    Color statusColor;
-
-    if (isActive) {
-      statusText = 'Running (${(progress * 100).toInt()}% completed)';
-      statusColor = const Color(0xFF4A90E2);
-    } else {
-      statusText = 'Completed';
-      statusColor = Colors.green;
-    }
 
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(12),
         border: isActive
             ? null
             : Border.all(color: Colors.green.withOpacity(0.3)),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.08),
+            color: Colors.black.withOpacity(0.05),
             blurRadius: 8,
             offset: const Offset(0, 2),
           ),
@@ -463,6 +529,7 @@ class _RunningJobsPageState extends State<RunningJobsPage> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          // Top Row: Hub Name and Machine Name
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -474,15 +541,19 @@ class _RunningJobsPageState extends State<RunningJobsPage> {
                     Text(
                       'Hub Name',
                       style: TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600,
-                        color: Colors.grey[900],
+                        fontSize: 12,
+                        fontWeight: FontWeight.w500,
+                        color: Colors.grey[600],
                       ),
                     ),
                     const SizedBox(height: 4),
                     Text(
                       hubName.toLowerCase(),
-                      style: TextStyle(fontSize: 13, color: Colors.grey[600]),
+                      style: const TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.black87,
+                      ),
                     ),
                   ],
                 ),
@@ -493,24 +564,31 @@ class _RunningJobsPageState extends State<RunningJobsPage> {
                   Text(
                     'Machine Name',
                     style: TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
-                      color: Colors.grey[900],
+                      fontSize: 12,
+                      fontWeight: FontWeight.w500,
+                      color: Colors.grey[600],
                     ),
                   ),
                   const SizedBox(height: 4),
                   Text(
                     machineId,
-                    style: TextStyle(fontSize: 13, color: Colors.grey[600]),
+                    style: const TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.black87,
+                    ),
                   ),
                 ],
               ),
             ],
           ),
+
           const SizedBox(height: 16),
+
+          // Bottom Row: Status/Progress and End Time
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            crossAxisAlignment: CrossAxisAlignment.start,
+            crossAxisAlignment: CrossAxisAlignment.end,
             children: [
               Expanded(
                 child: Column(
@@ -519,59 +597,83 @@ class _RunningJobsPageState extends State<RunningJobsPage> {
                     Text(
                       'Status',
                       style: TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600,
-                        color: Colors.grey[900],
+                        fontSize: 12,
+                        fontWeight: FontWeight.w500,
+                        color: Colors.grey[600],
                       ),
                     ),
-                    const SizedBox(height: 4),
-                    Text(
-                      statusText,
-                      style: TextStyle(
-                        fontSize: 13,
-                        color: statusColor,
-                        fontWeight: isActive
-                            ? FontWeight.normal
-                            : FontWeight.w600,
+                    const SizedBox(height: 6),
+                    if (isActive) ...[
+                      Text(
+                        'Running (${(progress * 100).toInt()}% completed)',
+                        style: const TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          color: Color(0xFF4A90E2),
+                        ),
                       ),
-                    ),
+                      const SizedBox(height: 8),
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(4),
+                        child: LinearProgressIndicator(
+                          value: progress,
+                          backgroundColor: const Color(0xFFE8E8E8),
+                          valueColor: const AlwaysStoppedAnimation<Color>(
+                            Color(0xFF4A90E2),
+                          ),
+                          minHeight: 6,
+                        ),
+                      ),
+                    ] else ...[
+                      Row(
+                        children: [
+                          Icon(
+                            Icons.check_circle,
+                            size: 16,
+                            color: Colors.green[600],
+                          ),
+                          const SizedBox(width: 6),
+                          const Text(
+                            'Completed',
+                            style: TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                              color: Colors.green,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
                   ],
                 ),
               ),
+
+              const SizedBox(width: 24),
+
               Column(
                 crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
                   Text(
-                    isActive ? 'End time' : 'Ended at',
+                    'End time',
                     style: TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
-                      color: Colors.grey[900],
+                      fontSize: 12,
+                      fontWeight: FontWeight.w500,
+                      color: Colors.grey[600],
                     ),
                   ),
                   const SizedBox(height: 4),
                   Text(
                     endTime,
-                    style: TextStyle(fontSize: 13, color: Colors.grey[600]),
+                    style: const TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.black87,
+                    ),
                   ),
                 ],
               ),
             ],
           ),
-          if (isActive) ...[
-            const SizedBox(height: 12),
-            ClipRRect(
-              borderRadius: BorderRadius.circular(2),
-              child: LinearProgressIndicator(
-                value: progress,
-                backgroundColor: const Color(0xFFE8E8E8),
-                valueColor: const AlwaysStoppedAnimation<Color>(
-                  Color(0xFF4A90E2),
-                ),
-                minHeight: 6,
-              ),
-            ),
-          ],
         ],
       ),
     );
@@ -611,6 +713,25 @@ class _RunningJobsPageState extends State<RunningJobsPage> {
           Text(
             'Scan QR code to start a wash',
             style: TextStyle(fontSize: 14, color: Colors.grey[500]),
+          ),
+          const SizedBox(height: 16),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            decoration: BoxDecoration(
+              color: Colors.blue[50],
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.info_outline, size: 16, color: Colors.blue[700]),
+                const SizedBox(width: 8),
+                Text(
+                  'Completed washes appear in History',
+                  style: TextStyle(fontSize: 12, color: Colors.blue[700]),
+                ),
+              ],
+            ),
           ),
         ],
       ),

@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
-import 'package:internship_duxoff_hub/views/home%20screen/qrscanning/qrscaning_page.dart';
 
 import 'package:internship_duxoff_hub/views/loginpage.dart';
+import 'package:internship_duxoff_hub/views/qkwashome.dart';
+import 'package:internship_duxoff_hub/views/splash_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -21,7 +22,7 @@ class MyApp extends StatelessWidget {
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.blue),
         useMaterial3: true,
       ),
-      home: QRScannerPage(),
+      home: SplashScreen(),
     );
   }
 }
