@@ -18,7 +18,7 @@ class _SplashScreenState extends State<SplashScreen> {
   @override
   void initState() {
     super.initState();
-    // Hide status bar and navigation bar for fullscreen
+    
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
     _initializeVideo();
   }
@@ -39,14 +39,14 @@ class _SplashScreenState extends State<SplashScreen> {
       await _controller.setLooping(false);
       await _controller.play();
 
-      // Listen for video completion
+      
       _controller.addListener(_videoListener);
 
-      debugPrint('✅ [SplashScreen] Video playing');
+      debugPrint('[SplashScreen] Video playing');
     } catch (e) {
-      debugPrint('❌ [SplashScreen] Error: $e');
+      debugPrint('[SplashScreen] Error: $e');
       if (!mounted) return;
-      // Navigate immediately if video fails
+      
       _navigateToLoginPage();
     }
   }
@@ -54,7 +54,7 @@ class _SplashScreenState extends State<SplashScreen> {
   void _videoListener() {
     if (!_controller.value.isInitialized) return;
 
-    // Navigate when video ends
+    
     if (_controller.value.position >= _controller.value.duration) {
       _navigateToLoginPage();
     }
@@ -63,7 +63,7 @@ class _SplashScreenState extends State<SplashScreen> {
   void _navigateToLoginPage() {
     if (!mounted) return;
 
-    // Restore system UI
+    
     SystemChrome.setEnabledSystemUIMode(
       SystemUiMode.manual,
       overlays: SystemUiOverlay.values,
@@ -92,7 +92,7 @@ class _SplashScreenState extends State<SplashScreen> {
       body: _isVideoInitialized
           ? Stack(
               children: [
-                // Video background
+                
                 SizedBox.expand(
                   child: FittedBox(
                     fit: BoxFit.cover,
@@ -103,7 +103,7 @@ class _SplashScreenState extends State<SplashScreen> {
                     ),
                   ),
                 ),
-                // qkwash text
+                
                 Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
@@ -116,7 +116,7 @@ class _SplashScreenState extends State<SplashScreen> {
                           fontWeight: FontWeight.bold,
                           color: Color(
                             0xFF0066B3,
-                          ), // Blue color matching the logo
+                          ),
                           letterSpacing: -2,
                         ),
                       ),
@@ -125,7 +125,7 @@ class _SplashScreenState extends State<SplashScreen> {
                 ),
               ],
             )
-          : const SizedBox.shrink(), // Empty screen while loading
+          : const SizedBox.shrink(), 
     );
   }
 }

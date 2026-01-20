@@ -9,36 +9,260 @@ class HomeApi {
   static const String baseUrl = 'https://api.qkwash.com';
   static const Duration timeoutDuration = Duration(seconds: 30);
 
-  /// Helper method to get user credentials
-  /// Helper method to get user credentials
-/// ✅ FIXED: Now checks both key variations for compatibility
-static Future<Map<String, String>> _getUserCredentials() async {
-  final prefs = await SharedPreferences.getInstance();
-  
-  // Try both key variations (usermobile and user_mobile)
-  final mobile = prefs.getString('usermobile') ?? 
-                 prefs.getString('user_mobile');
-  
-  // Try both key variations (sessionToken and session_token)
-  final token = prefs.getString('sessionToken') ?? 
-                prefs.getString('session_token');
+  static Future<Map<String, String>> _getUserCredentials() async {
+    final prefs = await SharedPreferences.getInstance();
 
-  print('🔍 Credential Check:');
-  print('   usermobile: ${prefs.getString('usermobile')}');
-  print('   user_mobile: ${prefs.getString('user_mobile')}');
-  print('   sessionToken: ${prefs.getString('sessionToken')?.substring(0, 8)}...');
-  print('   session_token: ${prefs.getString('session_token')?.substring(0, 8)}...');
+    final mobile =
+        prefs.getString('user_mobile') ?? prefs.getString('usermobile') ?? '';
+    final token =
+        prefs.getString('session_token') ??
+        prefs.getString('sessionToken') ??
+        '';
 
-  if (mobile == null || mobile.isEmpty) {
-    throw Exception('Mobile number not found. Please login again.');
+    debugPrint('🔍 Credential Check:');
+    debugPrint('   Final mobile: $mobile');
+    debugPrint('   Final token exists: ${token.isNotEmpty}');
+
+    if (mobile.isEmpty) {
+      throw Exception('Mobile number not found. Please login again.');
+    }
+
+    if (token.isEmpty) {
+      throw Exception('Session token not found. Please login again.');
+    }
+
+    return {'mobile': mobile, 'token': token};
   }
 
-  if (token == null || token.isEmpty) {
-    throw Exception('Session token not found. Please login again.');
+  static Future<List<Map<String, dynamic>>> getBookingHistory() async {
+    try {
+      final credentials = await _getUserCredentials();
+      final mobile = credentials['mobile']!;
+      final token = credentials['token']!;
+
+      debugPrint('========== DEBUG BOOKING HISTORY API ==========');
+
+      final requestBody = {"usermobile": mobile, "sessiontoken": token};
+
+      final response = await http
+          .post(
+            Uri.parse('$baseUrl/api/user/history'),
+            headers: {'Content-Type': 'application/json'},
+            body: jsonEncode(requestBody),
+          )
+          .timeout(timeoutDuration);
+
+      debugPrint('Response Status: ${response.statusCode}');
+
+      debugPrint('========== RAW API RESPONSE START ==========');
+      debugPrint(response.body);
+      debugPrint('========== RAW API RESPONSE END ==========');
+
+      List<Map<String, dynamic>> historyList = [];
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+
+        if (data is List) {
+          debugPrint(' Response is a List with ${data.length} items');
+
+          // Print FIRST 2 items in COMPLETE detail
+          for (int i = 0; i < (data.length > 2 ? 2 : data.length); i++) {
+            debugPrint('========== ITEM $i COMPLETE RAW DATA ==========');
+            final item = data[i];
+            if (item is Map) {
+              debugPrint(jsonEncode(item));
+              debugPrint('------- Field by field breakdown: -------');
+              item.forEach((key, value) {
+                debugPrint('  [$key]: $value (${value.runtimeType})');
+              });
+            }
+            debugPrint('=============================================');
+          }
+
+          historyList = data.map((item) {
+            if (item is Map<String, dynamic>) {
+              return _normalizeHistoryItem(item);
+            } else if (item is Map) {
+              return _normalizeHistoryItem(Map<String, dynamic>.from(item));
+            }
+            return <String, dynamic>{};
+          }).toList();
+        } else if (data is Map &&
+            data.containsKey('data') &&
+            data['data'] is List) {
+          debugPrint(' Response is wrapped in data object');
+          final List dataList = data['data'] as List;
+
+          for (
+            int i = 0;
+            i < (dataList.length > 2 ? 2 : dataList.length);
+            i++
+          ) {
+            debugPrint('========== ITEM $i COMPLETE RAW DATA ==========');
+            final item = dataList[i];
+            if (item is Map) {
+              debugPrint(jsonEncode(item));
+              debugPrint('------- Field by field breakdown: -------');
+              item.forEach((key, value) {
+                debugPrint('  [$key]: $value (${value.runtimeType})');
+              });
+            }
+            debugPrint('=============================================');
+          }
+
+          historyList = dataList.map((item) {
+            if (item is Map<String, dynamic>) {
+              return _normalizeHistoryItem(item);
+            } else if (item is Map) {
+              return _normalizeHistoryItem(Map<String, dynamic>.from(item));
+            }
+            return <String, dynamic>{};
+          }).toList();
+        }
+      } else if (response.statusCode == 404) {
+        debugPrint('ℹ️ No booking history found (404)');
+      }
+
+      debugPrint('🔍 Checking /runningjobs for completed jobs...');
+      try {
+        final runningJobs = await getRunningJobs();
+        final now = DateTime.now();
+        int completedFromRunning = 0;
+
+        for (var job in runningJobs) {
+          final endTimeString = job['device_booked_user_end_time']?.toString();
+          if (endTimeString != null && endTimeString.isNotEmpty) {
+            try {
+              final endTime = DateTime.parse(endTimeString).toLocal();
+              if (now.isAfter(endTime)) {
+                final exists = historyList.any(
+                  (h) =>
+                      h['deviceid']?.toString() ==
+                          job['deviceid']?.toString() &&
+                      h['device_booked_user_end_time']?.toString() ==
+                          endTimeString,
+                );
+                if (!exists) {
+                  debugPrint('📋 Adding completed job from runningjobs:');
+                  debugPrint('========== RUNNING JOB COMPLETE DATA ==========');
+                  debugPrint(jsonEncode(job));
+                  job.forEach((key, value) {
+                    debugPrint('  [$key]: $value');
+                  });
+                  debugPrint('=============================================');
+
+                  historyList.add(_normalizeHistoryItem(job));
+                  completedFromRunning++;
+                }
+              }
+            } catch (e) {
+              debugPrint(' Error parsing job end time: $e');
+            }
+          }
+        }
+
+        if (completedFromRunning > 0) {
+          debugPrint(
+            ' Added $completedFromRunning completed jobs from /runningjobs',
+          );
+        }
+      } catch (e) {
+        debugPrint('⚠️ Could not fetch running jobs: $e');
+      }
+
+      debugPrint('========== FINAL NORMALIZED AMOUNTS ==========');
+      for (
+        int i = 0;
+        i < (historyList.length > 5 ? 5 : historyList.length);
+        i++
+      ) {
+        debugPrint(
+          '   Item $i amount: ${historyList[i]['booked_user_amount']}',
+        );
+      }
+      debugPrint('=============================================');
+
+      debugPrint('📊 Total history records: ${historyList.length}');
+      debugPrint('===============================================');
+
+      return historyList;
+    } catch (e) {
+      debugPrint(' ERROR in getBookingHistory: $e');
+      rethrow;
+    }
   }
 
-  return {'mobile': mobile, 'token': token};
-}
+  static Map<String, dynamic> _normalizeHistoryItem(Map<String, dynamic> item) {
+    final normalized = Map<String, dynamic>.from(item);
+
+    debugPrint('🔍 Normalizing item - Searching for amount field...');
+
+    final existingAmount = normalized['booked_user_amount'];
+    if (existingAmount != null &&
+        existingAmount.toString() != '0' &&
+        existingAmount.toString().isNotEmpty) {
+      debugPrint(' Using existing booked_user_amount: $existingAmount');
+      return normalized;
+    }
+
+    // Try all possible amount field names
+    final possibleAmountFields = [
+      'transactionamount',
+      'transactionAmount',
+      'transaction_amount',
+      'booked_user_amount',
+      'bookedUserAmount',
+      'amount',
+      'paymentAmount',
+      'payment_amount',
+      'totalAmount',
+      'total_amount',
+      'price',
+      'total',
+      'cost',
+      'totalCost',
+      'total_cost',
+      'fare',
+      'charge',
+      'fee',
+      'booked_amount',
+      'booking_amount',
+      'user_amount',
+      'paymentid',
+      'payment_id',
+    ];
+
+    bool foundAmount = false;
+    for (var field in possibleAmountFields) {
+      final value = normalized[field];
+      if (value != null &&
+          value.toString() != '0' &&
+          value.toString().isNotEmpty &&
+          value.toString() != 'null') {
+        normalized['booked_user_amount'] = value;
+        debugPrint(
+          '✅ Found amount in [$field]: $value → Setting booked_user_amount',
+        );
+        foundAmount = true;
+        break;
+      }
+    }
+
+    if (!foundAmount) {
+      // Print ALL fields to help debug
+      debugPrint('⚠️ No standard amount field found. ALL FIELDS IN THIS ITEM:');
+      item.forEach((key, value) {
+        debugPrint('  [$key]: $value (${value.runtimeType})');
+      });
+
+      // Set to 0 as fallback
+      normalized['booked_user_amount'] = 0;
+      debugPrint('⚠️ Defaulting booked_user_amount to 0');
+    }
+
+    return normalized;
+  }
 
   /// GET USER PROFILE
   static Future<Map<String, dynamic>> getUserProfile() async {
@@ -47,16 +271,7 @@ static Future<Map<String, String>> _getUserCredentials() async {
       final mobile = credentials['mobile']!;
       final token = credentials['token']!;
 
-      print('========== DEBUG USER PROFILE API ==========');
-      print('Mobile: $mobile');
-      print(
-        'Token: ${token.substring(0, token.length > 10 ? 10 : token.length)}...',
-      );
-
       final requestBody = {"usermobile": mobile, "sessiontoken": token};
-
-      print('Request URL: $baseUrl/api/settings/userProfile');
-      print('Request Body: ${jsonEncode(requestBody)}');
 
       final response = await http
           .post(
@@ -66,27 +281,17 @@ static Future<Map<String, String>> _getUserCredentials() async {
           )
           .timeout(timeoutDuration);
 
-      print('Response Status: ${response.statusCode}');
-      print('Response Body: ${response.body}');
-      print('===========================================');
-
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
-        print('✅ Successfully loaded user profile');
+        debugPrint('✅ Successfully loaded user profile');
         return data;
       } else if (response.statusCode == 401) {
         throw Exception('Session expired. Please login again.');
       } else {
         throw Exception('Failed to fetch user profile: ${response.statusCode}');
       }
-    } on SocketException {
-      throw Exception('No internet connection. Please check your network.');
-    } on TimeoutException {
-      throw Exception('Request timed out. Please try again.');
-    } on FormatException {
-      throw Exception('Invalid response format from server');
     } catch (e) {
-      print('❌ ERROR in getUserProfile: $e');
+      debugPrint('❌ ERROR in getUserProfile: $e');
       rethrow;
     }
   }
@@ -98,16 +303,7 @@ static Future<Map<String, String>> _getUserCredentials() async {
       final mobile = credentials['mobile']!;
       final token = credentials['token']!;
 
-      print('========== DEBUG RUNNING JOBS API ==========');
-      print('Mobile: $mobile');
-      print(
-        'Token: ${token.substring(0, token.length > 10 ? 10 : token.length)}...',
-      );
-
       final requestBody = {"usermobile": mobile, "sessiontoken": token};
-
-      print('Request URL: $baseUrl/api/user/runningjobs');
-      print('Request Body: ${jsonEncode(requestBody)}');
 
       final response = await http
           .post(
@@ -117,17 +313,11 @@ static Future<Map<String, String>> _getUserCredentials() async {
           )
           .timeout(timeoutDuration);
 
-      print('Response Status: ${response.statusCode}');
-      print('Response Body: ${response.body}');
-      print('===========================================');
-
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
 
         if (data is List) {
-          print('✅ Successfully loaded ${data.length} running jobs');
-
-          // Convert all items to Map<String, dynamic>
+          debugPrint('✅ Successfully loaded ${data.length} running jobs');
           return data.map((item) {
             if (item is Map<String, dynamic>) {
               return item;
@@ -137,154 +327,19 @@ static Future<Map<String, String>> _getUserCredentials() async {
             return <String, dynamic>{};
           }).toList();
         } else {
-          print('⚠️ Unexpected response format, returning empty list');
+          debugPrint('⚠️ Unexpected response format, returning empty list');
           return [];
         }
       } else if (response.statusCode == 401) {
         throw Exception('Session expired. Please login again.');
       } else if (response.statusCode == 404) {
-        print('ℹ️ No running jobs found');
+        debugPrint('ℹ️ No running jobs found');
         return [];
       } else {
         throw Exception('Failed to fetch running jobs: ${response.statusCode}');
       }
-    } on SocketException {
-      throw Exception('No internet connection. Please check your network.');
-    } on TimeoutException {
-      throw Exception('Request timed out. Please try again.');
-    } on FormatException {
-      throw Exception('Invalid response format from server');
     } catch (e) {
-      print('❌ ERROR in getRunningJobs: $e');
-      rethrow;
-    }
-  }
-
-  /// GET BOOKING HISTORY
-  /// ✅ ENHANCED: Merges history from both /history and completed jobs from /runningjobs
-  static Future<List<Map<String, dynamic>>> getBookingHistory() async {
-    try {
-      final credentials = await _getUserCredentials();
-      final mobile = credentials['mobile']!;
-      final token = credentials['token']!;
-
-      print('========== DEBUG BOOKING HISTORY API ==========');
-      print('Mobile: $mobile');
-      print(
-        'Token: ${token.substring(0, token.length > 10 ? 10 : token.length)}...',
-      );
-
-      final requestBody = {"usermobile": mobile, "sessiontoken": token};
-
-      print('Request URL: $baseUrl/api/user/history');
-      print('Request Body: ${jsonEncode(requestBody)}');
-
-      final response = await http
-          .post(
-            Uri.parse('$baseUrl/api/user/history'),
-            headers: {'Content-Type': 'application/json'},
-            body: jsonEncode(requestBody),
-          )
-          .timeout(timeoutDuration);
-
-      print('Response Status: ${response.statusCode}');
-      print('Response Body: ${response.body}');
-
-      List<Map<String, dynamic>> historyList = [];
-
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-
-        if (data is List) {
-          print(
-            '✅ Successfully loaded ${data.length} history records from /history',
-          );
-
-          historyList = data.map((item) {
-            if (item is Map<String, dynamic>) {
-              return item;
-            } else if (item is Map) {
-              return Map<String, dynamic>.from(item);
-            }
-            return <String, dynamic>{};
-          }).toList();
-        } else if (data is Map &&
-            data.containsKey('data') &&
-            data['data'] is List) {
-          print('✅ Found wrapped response format');
-          final List dataList = data['data'] as List;
-          historyList = dataList.map((item) {
-            if (item is Map<String, dynamic>) {
-              return item;
-            } else if (item is Map) {
-              return Map<String, dynamic>.from(item);
-            }
-            return <String, dynamic>{};
-          }).toList();
-        }
-      } else if (response.statusCode == 404) {
-        print('ℹ️ No booking history found in /history endpoint (404)');
-      } else if (response.statusCode != 401) {
-        print('⚠️ History API returned ${response.statusCode}, continuing...');
-      }
-
-      // ✅ NEW: Fetch completed jobs from running jobs endpoint
-      print('🔍 Checking /runningjobs for completed jobs...');
-      try {
-        final runningJobs = await getRunningJobs();
-        final now = DateTime.now();
-
-        int completedFromRunning = 0;
-
-        for (var job in runningJobs) {
-          final endTimeString = job['device_booked_user_end_time']?.toString();
-          if (endTimeString != null && endTimeString.isNotEmpty) {
-            try {
-              final endTime = DateTime.parse(endTimeString).toLocal();
-
-              // If job is completed (end time passed)
-              if (now.isAfter(endTime)) {
-                // Check if this job already exists in history (by deviceid and endtime)
-                final exists = historyList.any(
-                  (h) =>
-                      h['deviceid']?.toString() ==
-                          job['deviceid']?.toString() &&
-                      h['device_booked_user_end_time']?.toString() ==
-                          endTimeString,
-                );
-
-                if (!exists) {
-                  historyList.add(job);
-                  completedFromRunning++;
-                }
-              }
-            } catch (e) {
-              print('⚠️ Error parsing job end time: $e');
-            }
-          }
-        }
-
-        if (completedFromRunning > 0) {
-          print(
-            '✅ Added $completedFromRunning completed jobs from /runningjobs',
-          );
-        }
-      } catch (e) {
-        print('⚠️ Could not fetch running jobs for history merge: $e');
-      }
-
-      print('📊 Total history records: ${historyList.length}');
-      print('===============================================');
-
-      return historyList;
-    } on SocketException {
-      throw Exception('No internet connection. Please check your network.');
-    } on TimeoutException {
-      throw Exception('Request timed out. Please try again.');
-    } on FormatException {
-      throw Exception('Invalid response format from server');
-    } catch (e) {
-      print('❌ ERROR in getBookingHistory: $e');
+      debugPrint('❌ ERROR in getRunningJobs: $e');
       rethrow;
     }
   }
@@ -296,21 +351,11 @@ static Future<Map<String, String>> _getUserCredentials() async {
       final mobile = credentials['mobile']!;
       final token = credentials['token']!;
 
-      print('========== DEBUG HUB DETAILS API ==========');
-      print('Hub ID: $hubId');
-      print('Mobile: $mobile');
-      print(
-        'Token: ${token.substring(0, token.length > 10 ? 10 : token.length)}...',
-      );
-
       final requestBody = {
         "hubId": hubId,
         "usermobile": mobile,
         "sessionToken": token,
       };
-
-      print('Request URL: $baseUrl/api/hubs/hubs/details');
-      print('Request Body: ${jsonEncode(requestBody)}');
 
       final response = await http
           .post(
@@ -320,18 +365,12 @@ static Future<Map<String, String>> _getUserCredentials() async {
           )
           .timeout(timeoutDuration);
 
-      print('Response Status: ${response.statusCode}');
-      print('Response Body: ${response.body}');
-      print('==========================================');
-
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
-
         if (data is List) {
-          print('✅ Successfully loaded ${data.length} devices');
+          debugPrint('✅ Successfully loaded ${data.length} devices');
           return data;
         } else {
-          print('⚠️ Unexpected response format, returning empty list');
           return [];
         }
       } else if (response.statusCode == 401) {
@@ -341,14 +380,8 @@ static Future<Map<String, String>> _getUserCredentials() async {
       } else {
         throw Exception('Failed to fetch hub details: ${response.statusCode}');
       }
-    } on SocketException {
-      throw Exception('No internet connection. Please check your network.');
-    } on TimeoutException {
-      throw Exception('Request timed out. Please try again.');
-    } on FormatException {
-      throw Exception('Invalid response format from server');
     } catch (e) {
-      print('❌ ERROR in getHubDetails: $e');
+      debugPrint('❌ ERROR in getHubDetails: $e');
       rethrow;
     }
   }
@@ -361,10 +394,6 @@ static Future<Map<String, String>> _getUserCredentials() async {
     try {
       final requestBody = {"amount": amount, "userId": userId};
 
-      print('========== DEBUG CREATE PAYMENT ORDER ==========');
-      print('Request URL: $baseUrl/api/users/createOrder');
-      print('Request Body: ${jsonEncode(requestBody)}');
-
       final response = await http
           .post(
             Uri.parse('$baseUrl/api/users/createOrder'),
@@ -373,19 +402,53 @@ static Future<Map<String, String>> _getUserCredentials() async {
           )
           .timeout(timeoutDuration);
 
-      print('Response Status: ${response.statusCode}');
-      print('Response Body: ${response.body}');
-      print('===============================================');
-
-      if (response.statusCode == 200) {
+      if (response.statusCode == 200 || response.statusCode == 201) {
         final data = jsonDecode(response.body);
 
-        if (!data.containsKey('success') || !data.containsKey('orderId')) {
-          throw Exception('Invalid payment order response');
-        }
+        if (data is Map<String, dynamic>) {
+          if (data.containsKey('orderId') && data['orderId'] != null) {
+            return {
+              'success': true,
+              'orderId': data['orderId'].toString(),
+              'amount': data['amount'] ?? amount,
+              'currency': data['currency'] ?? 'INR',
+            };
+          }
 
-        print('✅ Payment order created successfully');
-        return data;
+          if (data.containsKey('success') && data['success'] == true) {
+            if (data.containsKey('orderId') && data['orderId'] != null) {
+              return {
+                'success': true,
+                'orderId': data['orderId'].toString(),
+                'amount': data['amount'] ?? amount,
+                'currency': data['currency'] ?? 'INR',
+              };
+            } else if (data.containsKey('data') && data['data'] is Map) {
+              final nestedData = data['data'] as Map<String, dynamic>;
+              if (nestedData.containsKey('orderId')) {
+                return {
+                  'success': true,
+                  'orderId': nestedData['orderId'].toString(),
+                  'amount': nestedData['amount'] ?? amount,
+                  'currency': nestedData['currency'] ?? 'INR',
+                };
+              }
+            }
+          }
+
+          if (data.containsKey('id') && data['id'] != null) {
+            return {
+              'success': true,
+              'orderId': data['id'].toString(),
+              'amount': data['amount'] ?? amount,
+              'currency': data['currency'] ?? 'INR',
+            };
+          }
+
+          throw Exception('Invalid payment order response: orderId not found');
+        } else {
+          throw Exception('Invalid response format from server');
+        }
       } else if (response.statusCode == 400) {
         final errorData = jsonDecode(response.body);
         throw Exception(errorData['message'] ?? 'Invalid payment details');
@@ -394,19 +457,14 @@ static Future<Map<String, String>> _getUserCredentials() async {
           'Failed to create payment order: ${response.statusCode}',
         );
       }
-    } on SocketException {
-      throw Exception('No internet connection. Please check your network.');
-    } on TimeoutException {
-      throw Exception('Request timed out. Please try again.');
-    } on FormatException {
-      throw Exception('Invalid response format from server');
     } catch (e) {
-      print('❌ ERROR in createPaymentOrder: $e');
+      debugPrint('❌ ERROR in createPaymentOrder: $e');
       rethrow;
     }
   }
 
   /// BOOK DEVICE
+  /// ENHANCED BOOK DEVICE - Added response logging
   static Future<Map<String, dynamic>> bookDevice({
     required String hubId,
     required int deviceId,
@@ -426,13 +484,17 @@ static Future<Map<String, String>> _getUserCredentials() async {
   }) async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      final storedToken = prefs.getString('sessionToken');
-      final storedMobile = prefs.getString('usermobile');
+      final storedToken =
+          prefs.getString('session_token') ??
+          prefs.getString('sessionToken') ??
+          sessionToken;
+      final storedMobile =
+          prefs.getString('user_mobile') ??
+          prefs.getString('usermobile') ??
+          mobileNumber;
 
-      final token = sessionToken;
-      final mobile = mobileNumber.isNotEmpty
-          ? mobileNumber
-          : (storedMobile ?? '');
+      final token = storedToken.isNotEmpty ? storedToken : sessionToken;
+      final mobile = storedMobile.isNotEmpty ? storedMobile : mobileNumber;
 
       if (token.isEmpty || mobile.isEmpty) {
         throw Exception('Session expired. Please login again.');
@@ -458,13 +520,19 @@ static Future<Map<String, String>> _getUserCredentials() async {
         'sessiontoken': token,
       };
 
-      debugPrint('📤 Booking device: $deviceId at hub: $hubId');
+      debugPrint('========== BOOKING DEVICE ==========');
+      debugPrint('📤 Sending booking request:');
+      debugPrint('   Amount: $transactionAmount');
+      debugPrint('   Payment ID: $paymentId');
+      debugPrint('   Mobile: $mobile');
+      debugPrint('   Device ID: $deviceId');
+      debugPrint('   Full body: ${jsonEncode(body)}');
 
       final response = await http
           .post(
             url,
             headers: {'Content-Type': 'application/json'},
-            body: json.encode(body),
+            body: jsonEncode(body),
           )
           .timeout(
             const Duration(seconds: 15),
@@ -472,10 +540,20 @@ static Future<Map<String, String>> _getUserCredentials() async {
           );
 
       debugPrint('📥 Booking response status: ${response.statusCode}');
-      debugPrint('📥 Booking response body: ${response.body}');
+      debugPrint('📥 Booking response body:');
+      debugPrint(response.body);
+      debugPrint('====================================');
 
       if (response.statusCode == 200 || response.statusCode == 201) {
-        final data = json.decode(response.body);
+        final data = jsonDecode(response.body);
+
+        // ✅ Log what the booking API returns
+        debugPrint('✅ Booking successful. Response data:');
+        if (data is Map) {
+          data.forEach((key, value) {
+            debugPrint('  [$key]: $value');
+          });
+        }
 
         if (data is Map<String, dynamic>) {
           if (data['success'] == true ||
@@ -505,7 +583,7 @@ static Future<Map<String, String>> _getUserCredentials() async {
       } else if (response.statusCode == 401) {
         throw Exception('Session expired. Please login again.');
       } else if (response.statusCode == 400) {
-        final data = json.decode(response.body);
+        final data = jsonDecode(response.body);
         throw Exception(data['message'] ?? 'Invalid booking request');
       } else {
         throw Exception('Booking failed with status: ${response.statusCode}');
@@ -515,4 +593,22 @@ static Future<Map<String, String>> _getUserCredentials() async {
       rethrow;
     }
   }
+
+  /// ALTERNATE SOLUTION: Store booking locally if API doesn't return amount
+  /// Add this to your bookDevice success block in PaymentDetailsPage:
+  ///
+  /// After successful booking, save locally:
+  /// ```dart
+  /// final prefs = await SharedPreferences.getInstance();
+  /// final bookingKey = 'booking_${deviceId}_${DateTime.now().millisecondsSinceEpoch}';
+  /// await prefs.setString(bookingKey, jsonEncode({
+  ///   'deviceid': widget.deviceId,
+  ///   'hubname': widget.hubName,
+  ///   'amount': _currentAmount,
+  ///   'endTime': endTime,
+  ///   'timestamp': DateTime.now().toIso8601String(),
+  /// }));
+  /// ```
+  ///
+  /// Then in WashHistoryPage, merge local data with API data
 }

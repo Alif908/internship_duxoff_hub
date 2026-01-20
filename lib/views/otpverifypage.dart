@@ -9,7 +9,7 @@ class OtpVerifyPage extends StatefulWidget {
   final String mobileNumber;
   final String userName;
   final String userType;
-  final String otpFromApi; // For dev testing only
+  final String otpFromApi;
 
   const OtpVerifyPage({
     super.key,
@@ -31,19 +31,19 @@ class _OtpVerifyPageState extends State<OtpVerifyPage> {
   final List<FocusNode> _focusNodes = List.generate(4, (index) => FocusNode());
   bool _isLoading = false;
 
-  // Timer variables
+  
   int _resendTimer = 30;
   bool _canResend = false;
   Timer? _timer;
 
-  // Stored OTP from SharedPreferences
+ 
   String? _storedOtp;
 
   @override
   void initState() {
     super.initState();
     _startResendTimer();
-    _loadStoredOtp(); // Load OTP from SharedPreferences
+    _loadStoredOtp();
   }
 
   @override
@@ -58,18 +58,16 @@ class _OtpVerifyPageState extends State<OtpVerifyPage> {
     super.dispose();
   }
 
-  /// Load OTP from SharedPreferences
+  
   Future<void> _loadStoredOtp() async {
     try {
       final prefs = await SharedPreferences.getInstance();
       _storedOtp = prefs.getString('current_otp');
 
-      // 🔹 DEVELOPMENT: Print loaded OTP
-      debugPrint('========================================');
-      debugPrint('LOADING OTP FROM STORAGE...');
+      debugPrint('========== LOADING OTP FROM STORAGE ==========');
       debugPrint('Stored OTP: $_storedOtp');
 
-      // Optional: Check OTP expiration (e.g., 5 minutes)
+      
       final otpTimestamp = prefs.getString('otp_timestamp');
       if (otpTimestamp != null) {
         final timestamp = DateTime.parse(otpTimestamp);
@@ -79,26 +77,22 @@ class _OtpVerifyPageState extends State<OtpVerifyPage> {
         debugPrint('OTP Age: ${difference.inSeconds} seconds');
 
         if (difference.inMinutes > 5) {
-          // OTP expired, clear it
           await prefs.remove('current_otp');
           await prefs.remove('otp_timestamp');
           _storedOtp = null;
-          debugPrint('⚠️ OTP EXPIRED - Cleared from storage');
+          debugPrint('OTP EXPIRED - Cleared from storage');
         } else {
           debugPrint(
-            '✅ OTP is valid (expires in ${300 - difference.inSeconds}s)',
+            'OTP is valid (expires in ${300 - difference.inSeconds}s)',
           );
         }
-      } else {
-        debugPrint('⚠️ No timestamp found for OTP');
       }
-      debugPrint('========================================');
+      debugPrint('=============================================');
     } catch (e) {
-      debugPrint('❌ Error loading stored OTP: $e');
+      debugPrint('Error loading stored OTP: $e');
     }
   }
 
-  // Start 30 second countdown timer
   void _startResendTimer() {
     setState(() {
       _resendTimer = 30;
@@ -106,17 +100,20 @@ class _OtpVerifyPageState extends State<OtpVerifyPage> {
     });
 
     _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
-      setState(() {
-        if (_resendTimer > 0) {
-          _resendTimer--;
-        } else {
-          _canResend = true;
-          timer.cancel();
-        }
-      });
+      if (mounted) {
+        setState(() {
+          if (_resendTimer > 0) {
+            _resendTimer--;
+          } else {
+            _canResend = true;
+            timer.cancel();
+          }
+        });
+      }
     });
   }
 
+  
   Future<void> _handleSubmit() async {
     String enteredOtp = _otpControllers.map((c) => c.text).join();
 
@@ -125,7 +122,7 @@ class _OtpVerifyPageState extends State<OtpVerifyPage> {
       return;
     }
 
-    // 🔹 VERIFY OTP - Check against stored OTP OR passed OTP
+    
     final otpToVerify = _storedOtp ?? widget.otpFromApi;
 
     if (enteredOtp != otpToVerify) {
@@ -136,58 +133,145 @@ class _OtpVerifyPageState extends State<OtpVerifyPage> {
     setState(() => _isLoading = true);
 
     try {
-      // 🔹 CALL ADD/UPDATE USER API TO GET SESSION TOKEN
+      debugPrint('========== VERIFYING OTP & GETTING SESSION ==========');
+      debugPrint('Mobile: ${widget.mobileNumber}');
+      debugPrint('Name: ${widget.userName}');
+      debugPrint('User Type: ${widget.userType}');
+
+      
       final response = await AuthApi.addOrUpdateUser(
         name: widget.userName,
         mobile: widget.mobileNumber,
-        userStatus: widget.userType.toLowerCase(), // "existing" or "new"
+        userStatus: widget.userType.toLowerCase(),
       );
 
-      // 🔹 FIX: API returns "sessionToken" (camelCase), not "session_token"
-      if (response.containsKey('sessionToken')) {
-        final prefs = await SharedPreferences.getInstance();
+      debugPrint('Full API Response: $response');
+      debugPrint('Response Keys: ${response.keys.toList()}');
 
-        // 🔹 SAVE SESSION DATA
-        await prefs.setString('session_token', response['sessionToken']);
-        await prefs.setString('user_mobile', widget.mobileNumber);
-        await prefs.setString('user_name', widget.userName);
-        await prefs.setString(
-          'user_status',
-          response['userstatus'] ?? widget.userType,
-        );
-
-        // ✅ CLEAR OTP AFTER SUCCESSFUL VERIFICATION
-        await prefs.remove('current_otp');
-        await prefs.remove('otp_timestamp');
-
-        setState(() => _isLoading = false);
-
-        _showSnackBar('Login successful!', isError: false);
-
-        // Small delay to show success message
-        await Future.delayed(const Duration(milliseconds: 500));
-
-        // 🔹 NAVIGATE TO HOME PAGE
-        if (mounted) {
-          Navigator.pushReplacement(
-            context,
-            MaterialPageRoute(builder: (_) => const QKWashHome()),
-          );
-        }
-      } else {
+      
+      if (!response.containsKey('sessionToken') ||
+          response['sessionToken'] == null ||
+          response['sessionToken'].toString().isEmpty) {
         throw Exception('Session token not received from server');
+      }
+
+      final prefs = await SharedPreferences.getInstance();
+
+      
+      int userId = 0;
+
+      if (response.containsKey('userid')) {
+        userId = response['userid'] is int
+            ? response['userid']
+            : int.tryParse(response['userid'].toString()) ?? 0;
+        debugPrint('Found userid field: $userId');
+      } else if (response.containsKey('userId')) {
+        userId = response['userId'] is int
+            ? response['userId']
+            : int.tryParse(response['userId'].toString()) ?? 0;
+        debugPrint('Found userId field: $userId');
+      }
+
+      debugPrint('========== SAVING USER SESSION ==========');
+      debugPrint('User ID: $userId');
+      debugPrint(
+        'Session Token: ${response['sessionToken'].toString().substring(0, 10)}...',
+      );
+      debugPrint('Mobile: ${widget.mobileNumber}');
+      debugPrint('Name: ${widget.userName}');
+
+      
+      if (userId == 0) {
+        debugPrint('❌ CRITICAL: User ID is still 0!');
+        debugPrint('❌ This will cause payment to fail');
+        debugPrint('❌ Full API response: $response');
+        throw Exception(
+          'User ID not received from server. Please contact support.',
+        );
+      }
+
+      
+      await prefs.setString(
+        'session_token',
+        response['sessionToken'].toString(),
+      );
+      await prefs.setString(
+        'sessionToken',
+        response['sessionToken'].toString(),
+      );
+
+      await prefs.setString('user_mobile', widget.mobileNumber);
+      await prefs.setString('usermobile', widget.mobileNumber);
+
+      await prefs.setString('user_name', widget.userName);
+      await prefs.setString('username', widget.userName);
+
+      await prefs.setInt('user_id', userId);
+      await prefs.setInt('userid', userId);
+
+      await prefs.setString(
+        'user_status',
+        response['userstatus']?.toString() ?? widget.userType,
+      );
+
+      
+      await prefs.remove('current_otp');
+      await prefs.remove('otp_timestamp');
+
+      
+      debugPrint('========== VERIFICATION ==========');
+      debugPrint('Saved user_id: ${prefs.getInt('user_id')}');
+      debugPrint('Saved userid: ${prefs.getInt('userid')}');
+      debugPrint('Saved user_mobile: ${prefs.getString('user_mobile')}');
+      debugPrint('Saved usermobile: ${prefs.getString('usermobile')}');
+      debugPrint(
+        'Saved session_token: ${prefs.getString('session_token')?.substring(0, 10)}...',
+      );
+      debugPrint(
+        'Saved sessionToken: ${prefs.getString('sessionToken')?.substring(0, 10)}...',
+      );
+
+      
+      debugPrint('📋 All SharedPreferences keys:');
+      for (var key in prefs.getKeys()) {
+        final value = prefs.get(key);
+        if (key.contains('token') || key.contains('Token')) {
+          debugPrint('   $key: ${value.toString().substring(0, 10)}...');
+        } else {
+          debugPrint('   $key: $value');
+        }
+      }
+      debugPrint('==================================');
+
+      setState(() => _isLoading = false);
+
+      _showSnackBar('Login successful!', isError: false);
+
+      await Future.delayed(const Duration(milliseconds: 500));
+
+     
+      if (mounted) {
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (_) => const QKWashHome()),
+        );
       }
     } catch (e) {
       setState(() => _isLoading = false);
 
+      debugPrint('Error in OTP verification: $e');
+      debugPrint('Stack trace: ${StackTrace.current}');
+
       String errorMessage = 'Verification failed. Please try again.';
-      if (e.toString().contains('SocketException') ||
-          e.toString().contains('TimeoutException')) {
-        errorMessage = 'Network error. Check your internet connection.';
+      if (e.toString().contains('SocketException')) {
+        errorMessage = 'No internet connection. Check your network.';
+      } else if (e.toString().contains('TimeoutException')) {
+        errorMessage = 'Request timed out. Please try again.';
+      } else if (e.toString().contains('Exception:')) {
+        errorMessage = e.toString().replaceFirst('Exception: ', '');
       }
 
       _showSnackBar(errorMessage, isError: true);
-      debugPrint('Error in OTP verification: $e');
     }
   }
 
@@ -197,33 +281,31 @@ class _OtpVerifyPageState extends State<OtpVerifyPage> {
     setState(() => _isLoading = true);
 
     try {
+      debugPrint('========== RESENDING OTP ==========');
+      debugPrint('Mobile: ${widget.mobileNumber}');
+
       final response = await AuthApi.sendOtp(widget.mobileNumber);
 
-      // ✅ UPDATE STORED OTP IN SHARED PREFERENCES
-      if (response.containsKey('otp')) {
-        final newOtp = response['otp'];
-        final prefs = await SharedPreferences.getInstance();
-
-        // Store new OTP and timestamp
-        await prefs.setString('current_otp', newOtp);
-        await prefs.setString(
-          'otp_timestamp',
-          DateTime.now().toIso8601String(),
-        );
-
-        // ✅ UPDATE THE STATE VARIABLE IMMEDIATELY
-        setState(() {
-          _storedOtp = newOtp;
-        });
-
-        // 🔹 DEVELOPMENT ONLY: Show OTP in console
-        debugPrint('========================================');
-        debugPrint('NEW OTP SENT: $newOtp');
-        debugPrint('OTP stored in SharedPreferences: $newOtp');
-        debugPrint('========================================');
+      if (!response.containsKey('otp') || response['otp'] == null) {
+        throw Exception('OTP not received from server');
       }
 
-      // Clear OTP fields
+      final newOtp = response['otp'].toString();
+      final prefs = await SharedPreferences.getInstance();
+
+      
+      await prefs.setString('current_otp', newOtp);
+      await prefs.setString('otp_timestamp', DateTime.now().toIso8601String());
+
+      
+      setState(() {
+        _storedOtp = newOtp;
+      });
+
+      debugPrint('NEW OTP: $newOtp');
+      debugPrint('===================================');
+
+      
       for (var controller in _otpControllers) {
         controller.clear();
       }
@@ -236,8 +318,15 @@ class _OtpVerifyPageState extends State<OtpVerifyPage> {
       _showSnackBar('OTP resent successfully', isError: false);
     } catch (e) {
       setState(() => _isLoading = false);
-      _showSnackBar('Failed to resend OTP. Try again.', isError: true);
+
       debugPrint('Error resending OTP: $e');
+
+      String errorMessage = 'Failed to resend OTP. Try again.';
+      if (e.toString().contains('Exception:')) {
+        errorMessage = e.toString().replaceFirst('Exception: ', '');
+      }
+
+      _showSnackBar(errorMessage, isError: true);
     }
   }
 
@@ -284,7 +373,6 @@ class _OtpVerifyPageState extends State<OtpVerifyPage> {
               children: [
                 const SizedBox(height: 60),
 
-                // Title
                 const Text(
                   'Verify',
                   style: TextStyle(
@@ -296,7 +384,6 @@ class _OtpVerifyPageState extends State<OtpVerifyPage> {
 
                 const SizedBox(height: 20),
 
-                // Description
                 RichText(
                   textAlign: TextAlign.center,
                   text: TextSpan(
@@ -324,7 +411,6 @@ class _OtpVerifyPageState extends State<OtpVerifyPage> {
 
                 const SizedBox(height: 40),
 
-                // OTP Input Boxes
                 Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: List.generate(4, (index) {
@@ -368,7 +454,6 @@ class _OtpVerifyPageState extends State<OtpVerifyPage> {
 
                 const SizedBox(height: 35),
 
-                // Submit Button
                 SizedBox(
                   width: 130,
                   child: ElevatedButton(
@@ -406,7 +491,6 @@ class _OtpVerifyPageState extends State<OtpVerifyPage> {
 
                 const SizedBox(height: 25),
 
-                // Resend OTP with Timer
                 Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
@@ -439,7 +523,6 @@ class _OtpVerifyPageState extends State<OtpVerifyPage> {
 
                 const SizedBox(height: 40),
 
-                // OTP Image
                 Image.asset(
                   'assets/images/otppage.png',
                   height: 280,

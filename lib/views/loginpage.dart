@@ -29,26 +29,70 @@ class _LoginPageState extends State<LoginPage> {
     _checkExistingUser();
   }
 
-  /// Check if user data exists in SharedPreferences and auto-fill
+  /// ✅ Check if user data exists and auto-fill
   Future<void> _checkExistingUser() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      final savedName = prefs.getString('user_name');
-      final savedMobile = prefs.getString('user_mobile');
+      final savedName =
+          prefs.getString('user_name') ?? prefs.getString('username');
+      final savedMobile =
+          prefs.getString('user_mobile') ?? prefs.getString('usermobile');
 
-      if (savedName != null) {
+      if (savedName != null && savedName.isNotEmpty) {
         _nameController.text = savedName;
       }
-      if (savedMobile != null) {
+      if (savedMobile != null && savedMobile.isNotEmpty) {
         _mobileController.text = savedMobile;
       }
     } catch (e) {
-      debugPrint('Error loading saved user data: $e');
+      debugPrint('❌ Error loading saved user data: $e');
     }
   }
 
+  /// ✅ Improved validation
+  String? _validateName(String? value) {
+    if (value == null || value.trim().isEmpty) {
+      return 'Please enter your name';
+    }
+    if (value.trim().length < 2) {
+      return 'Name must be at least 2 characters';
+    }
+    if (!RegExp(r'^[a-zA-Z\s]+$').hasMatch(value.trim())) {
+      return 'Name can only contain letters';
+    }
+    return null;
+  }
+
+  String? _validateMobile(String? value) {
+    if (value == null || value.trim().isEmpty) {
+      return 'Please enter mobile number';
+    }
+    if (value.trim().length != 10) {
+      return 'Mobile number must be 10 digits';
+    }
+    if (!RegExp(r'^[6-9]\d{9}$').hasMatch(value.trim())) {
+      return 'Please enter a valid Indian mobile number';
+    }
+    return null;
+  }
+
   Future<void> _handleContinue() async {
-    // ... existing validation code ...
+    // ✅ Dismiss keyboard
+    FocusScope.of(context).unfocus();
+
+    // ✅ Validate inputs
+    final nameError = _validateName(_nameController.text);
+    final mobileError = _validateMobile(_mobileController.text);
+
+    if (nameError != null) {
+      _showSnackBar(nameError, isError: true);
+      return;
+    }
+
+    if (mobileError != null) {
+      _showSnackBar(mobileError, isError: true);
+      return;
+    }
 
     setState(() => _isLoading = true);
 
@@ -56,39 +100,53 @@ class _LoginPageState extends State<LoginPage> {
       final mobile = _mobileController.text.trim();
       final name = _nameController.text.trim();
 
-      // 🔹 CALL SEND OTP API
+      debugPrint('========== SENDING OTP ==========');
+      debugPrint('Mobile: $mobile');
+      debugPrint('Name: $name');
+
+      // ✅ Call send OTP API
       final response = await AuthApi.sendOtp(mobile);
 
-      if (!response.containsKey('otp')) {
-        throw Exception('OTP sending failed');
+      debugPrint('API Response: $response');
+
+      if (!response.containsKey('otp') || response['otp'] == null) {
+        throw Exception('OTP not received from server');
       }
 
-      final String otpFromApi = response['otp']; // DEV ONLY
-      final String userType = response['user_type'] ?? 'New';
+      final String otpFromApi = response['otp'].toString();
+      final String userType = response['user_type']?.toString() ?? 'New';
 
-      // 🔹 SAVE USER DATA + OTP IN SHARED PREFERENCES
+      debugPrint('✅ OTP Received: $otpFromApi');
+      debugPrint('User Type: $userType');
+
+      // ✅ Save user data + OTP in SharedPreferences
       final prefs = await SharedPreferences.getInstance();
+
+      // Save with both key variations for compatibility
       await prefs.setString('user_name', name);
+      await prefs.setString('username', name);
       await prefs.setString('user_mobile', mobile);
+      await prefs.setString('usermobile', mobile);
 
-      // ✅ STORE OTP (for development/testing only)
+      // Store OTP with timestamp for expiration checking
       await prefs.setString('current_otp', otpFromApi);
-
-      // Optional: Store OTP timestamp for expiration checking
       await prefs.setString('otp_timestamp', DateTime.now().toIso8601String());
+
+      debugPrint('✅ User data saved to SharedPreferences');
+      debugPrint('=================================');
 
       setState(() => _isLoading = false);
 
       _showSnackBar('OTP sent successfully!', isError: false);
 
-      // 🔹 NAVIGATE TO OTP PAGE
+      // ✅ Navigate to OTP page
       if (mounted) {
         await Navigator.push(
           context,
           MaterialPageRoute(
             builder: (_) => OtpVerifyPage(
               mobileNumber: mobile,
-              otpFromApi: otpFromApi, // Still pass for backward compatibility
+              otpFromApi: otpFromApi,
               userType: userType,
               userName: name,
             ),
@@ -98,11 +156,22 @@ class _LoginPageState extends State<LoginPage> {
     } catch (e) {
       setState(() => _isLoading = false);
 
-      // ... existing error handling ...
+      debugPrint('❌ Error in _handleContinue: $e');
+
+      String errorMessage = 'Failed to send OTP. Please try again.';
+
+      if (e.toString().contains('SocketException')) {
+        errorMessage = 'No internet connection. Please check your network.';
+      } else if (e.toString().contains('TimeoutException')) {
+        errorMessage = 'Request timed out. Please try again.';
+      } else if (e.toString().contains('Exception:')) {
+        errorMessage = e.toString().replaceFirst('Exception: ', '');
+      }
+
+      _showSnackBar(errorMessage, isError: true);
     }
   }
 
-  /// Show snackbar with custom styling
   void _showSnackBar(String message, {bool isError = false}) {
     if (!mounted) return;
 

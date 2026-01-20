@@ -6,7 +6,7 @@ import 'package:internship_duxoff_hub/views/home%20screen/settings%20page/settin
 import 'package:internship_duxoff_hub/views/home%20screen/settings%20page/wash_history.dart';
 
 class QKWashHome extends StatefulWidget {
-  final int initialTabIndex; // ✅ NEW: Accept initial tab index
+  final int initialTabIndex;
 
   const QKWashHome({super.key, this.initialTabIndex = 0});
 
@@ -15,16 +15,14 @@ class QKWashHome extends StatefulWidget {
 }
 
 class _QKWashHomeState extends State<QKWashHome> {
-  late int _selectedScreen; // ✅ Changed to late for initialization
+  late int _selectedScreen;
 
-  // Define screens list
   late final List<Widget> _screens;
 
   @override
   void initState() {
     super.initState();
-    _selectedScreen =
-        widget.initialTabIndex; // ✅ Initialize from widget parameter
+    _selectedScreen = widget.initialTabIndex;
     _screens = [
       const HomePage(),
       const WashHistoryPage(),
@@ -33,7 +31,6 @@ class _QKWashHomeState extends State<QKWashHome> {
     ];
   }
 
-  /// Handle bottom navigation tap
   void _onNavItemTapped(int index) {
     if (_selectedScreen != index) {
       setState(() {
@@ -42,13 +39,11 @@ class _QKWashHomeState extends State<QKWashHome> {
     }
   }
 
-  /// Navigate to QR Scanner
   void _navigateToQRScanner() {
     Navigator.push(
       context,
       MaterialPageRoute(builder: (_) => const QRScannerPage()),
     ).then((_) {
-      // Refresh current screen if needed after QR scan
       if (_selectedScreen == 0 || _selectedScreen == 2) {
         setState(() {});
       }
@@ -60,7 +55,6 @@ class _QKWashHomeState extends State<QKWashHome> {
     return Scaffold(
       body: IndexedStack(index: _selectedScreen, children: _screens),
 
-      // Floating Action Button for QR Scanner
       floatingActionButton: FloatingActionButton(
         backgroundColor: Colors.black,
         elevation: 4,
@@ -71,7 +65,6 @@ class _QKWashHomeState extends State<QKWashHome> {
 
       floatingActionButtonLocation: FloatingActionButtonLocation.centerDocked,
 
-      // Bottom Navigation Bar
       bottomNavigationBar: BottomAppBar(
         shape: const CircularNotchedRectangle(),
         notchMargin: 8,
@@ -93,7 +86,7 @@ class _QKWashHomeState extends State<QKWashHome> {
                 label: 'History',
                 index: 1,
               ),
-              const SizedBox(width: 40), // Space for FAB
+              const SizedBox(width: 40),
               _buildNavItem(
                 icon: Icons.directions_run,
                 selectedIcon: Icons.directions_run,
@@ -113,7 +106,6 @@ class _QKWashHomeState extends State<QKWashHome> {
     );
   }
 
-  /// Build individual navigation item
   Widget _buildNavItem({
     required IconData icon,
     required IconData selectedIcon,

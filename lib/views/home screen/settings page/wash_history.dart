@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:internship_duxoff_hub/services/home_api_service.dart';
 import 'package:intl/intl.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'dart:convert';
 
 class WashHistoryPage extends StatefulWidget {
   const WashHistoryPage({super.key});
@@ -16,7 +18,7 @@ class _WashHistoryPageState extends State<WashHistoryPage> {
   bool _isLoading = true;
   String _errorMessage = '';
   String _searchQuery = '';
-  String _selectedFilter = 'All'; // All, Washer, Dryer
+  String _selectedFilter = 'All';
 
   @override
   void initState() {
@@ -24,7 +26,45 @@ class _WashHistoryPageState extends State<WashHistoryPage> {
     _loadHistory();
   }
 
-  /// Load booking history from API
+  /// ✅ NEW: Load local bookings from SharedPreferences
+  Future<List<Map<String, dynamic>>> _loadLocalBookings() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final allKeys = prefs.getKeys();
+
+      List<Map<String, dynamic>> localBookings = [];
+
+      for (String key in allKeys) {
+        if (key.startsWith('booking_')) {
+          try {
+            final bookingJson = prefs.getString(key);
+            if (bookingJson != null && bookingJson.isNotEmpty) {
+              final booking = jsonDecode(bookingJson) as Map<String, dynamic>;
+
+              // Add source indicator
+              booking['_source'] = 'local';
+              booking['_key'] = key;
+
+              localBookings.add(booking);
+              debugPrint(
+                '📦 Loaded local booking: $key with amount: ${booking['amount']}',
+              );
+            }
+          } catch (e) {
+            debugPrint('⚠️ Error parsing booking $key: $e');
+          }
+        }
+      }
+
+      debugPrint('✅ Found ${localBookings.length} local bookings');
+      return localBookings;
+    } catch (e) {
+      debugPrint('❌ Error loading local bookings: $e');
+      return [];
+    }
+  }
+
+  /// ✅ ENHANCED: Merge API data with local storage
   Future<void> _loadHistory() async {
     if (!mounted) return;
 
@@ -34,41 +74,127 @@ class _WashHistoryPageState extends State<WashHistoryPage> {
     });
 
     try {
-      final history = await HomeApi.getBookingHistory();
+      // Load both API and local data
+      final apiHistory = await HomeApi.getBookingHistory();
+      final localBookings = await _loadLocalBookings();
 
       if (!mounted) return;
 
-      // Sort by date (most recent first) - improved sorting logic
-      final sortedHistory = List<Map<String, dynamic>>.from(history);
-      sortedHistory.sort((a, b) {
-        try {
-          final aTimeStr = a['device_booked_user_end_time']?.toString();
-          final bTimeStr = b['device_booked_user_end_time']?.toString();
+      // Create a merged list
+      List<Map<String, dynamic>> mergedHistory = [];
 
-          // Handle null or empty strings
+      // Start with API data
+      for (var apiItem in apiHistory) {
+        final deviceId = apiItem['deviceid']?.toString();
+        final endTime = apiItem['device_booked_user_end_time']?.toString();
+
+        // Try to find matching local booking
+        Map<String, dynamic>? matchingLocal;
+        for (var localItem in localBookings) {
+          if (localItem['deviceid']?.toString() == deviceId &&
+              localItem['endtime']?.toString() == endTime) {
+            matchingLocal = localItem;
+            break;
+          }
+        }
+
+        // If we found a match and API amount is 0, use local amount
+        if (matchingLocal != null) {
+          final apiAmount =
+              double.tryParse(
+                apiItem['booked_user_amount']?.toString() ?? '0',
+              ) ??
+              0.0;
+          final localAmount =
+              double.tryParse(matchingLocal['amount']?.toString() ?? '0') ??
+              0.0;
+
+          if (apiAmount == 0 && localAmount > 0) {
+            apiItem['booked_user_amount'] = localAmount;
+            apiItem['_amount_source'] = 'local';
+            debugPrint(
+              '✅ Using local amount for device $deviceId: ₹$localAmount',
+            );
+          }
+        }
+
+        mergedHistory.add(apiItem);
+      }
+
+      // Add local bookings that aren't in API response
+      for (var localItem in localBookings) {
+        final deviceId = localItem['deviceid']?.toString();
+        final endTime = localItem['endtime']?.toString();
+
+        bool existsInApi = mergedHistory.any(
+          (apiItem) =>
+              apiItem['deviceid']?.toString() == deviceId &&
+              apiItem['device_booked_user_end_time']?.toString() == endTime,
+        );
+
+        if (!existsInApi) {
+          // Convert local format to API format
+          final normalizedLocal = {
+            'deviceid': localItem['deviceid'],
+            'hubname': localItem['hubname'],
+            'hubid': localItem['hubid'],
+            'machineid': localItem['machineid'],
+            'booked_user_amount': localItem['amount'],
+            'device_booked_user_end_time': localItem['endtime'],
+            'device_booked_user_start_time': localItem['starttime'],
+            'booked_user_selected_wash_mode': localItem['washmode'],
+            'booked_user_selected_duration': localItem['washtime'],
+            'booked_user_selected_detergent_preference': localItem['detergent'],
+            'paymentid': localItem['paymentid'],
+            '_source': 'local_only',
+          };
+
+          mergedHistory.add(normalizedLocal);
+          debugPrint('✅ Added local-only booking for device $deviceId');
+        }
+      }
+
+      // Sort by date (most recent first)
+      mergedHistory.sort((a, b) {
+        try {
+          final aTimeStr =
+              a['device_booked_user_end_time']?.toString() ??
+              a['endtime']?.toString();
+          final bTimeStr =
+              b['device_booked_user_end_time']?.toString() ??
+              b['endtime']?.toString();
+
           if (aTimeStr == null || aTimeStr.isEmpty) return 1;
           if (bTimeStr == null || bTimeStr.isEmpty) return -1;
 
           final dateA = DateTime.parse(aTimeStr);
           final dateB = DateTime.parse(bTimeStr);
 
-          // Sort descending (most recent first)
           return dateB.compareTo(dateA);
         } catch (e) {
-          debugPrint('⚠️ [WashHistory] Error sorting dates: $e');
+          debugPrint('⚠️ Error sorting dates: $e');
           return 0;
         }
       });
 
       setState(() {
-        _historyList = sortedHistory;
-        _filteredHistoryList = sortedHistory;
+        _historyList = mergedHistory;
+        _filteredHistoryList = mergedHistory;
         _isLoading = false;
       });
 
-      debugPrint(
-        '✅ [WashHistory] Loaded ${_historyList.length} history records (sorted by recent)',
-      );
+      debugPrint('✅ Total history records: ${_historyList.length}');
+
+      // Log amounts for verification
+      for (
+        var i = 0;
+        i < (_historyList.length > 5 ? 5 : _historyList.length);
+        i++
+      ) {
+        debugPrint(
+          '  Record $i: ₹${_historyList[i]['booked_user_amount']} (source: ${_historyList[i]['_amount_source'] ?? 'api'})',
+        );
+      }
     } catch (e) {
       if (!mounted) return;
 
@@ -104,11 +230,10 @@ class _WashHistoryPageState extends State<WashHistoryPage> {
         }
       });
 
-      debugPrint('❌ [WashHistory] Error loading history: $e');
+      debugPrint('❌ Error loading history: $e');
     }
   }
 
-  /// Filter and search functionality
   void _applyFilters() {
     setState(() {
       _filteredHistoryList = _historyList.where((booking) {
@@ -137,7 +262,6 @@ class _WashHistoryPageState extends State<WashHistoryPage> {
     });
   }
 
-  /// Calculate statistics
   Map<String, dynamic> _calculateStats() {
     int totalWashes = 0;
     int totalDryers = 0;
@@ -164,7 +288,6 @@ class _WashHistoryPageState extends State<WashHistoryPage> {
     };
   }
 
-  /// Format date and time
   String _formatDateTime(String dateTimeString) {
     if (dateTimeString.isEmpty) return 'N/A';
 
@@ -172,7 +295,7 @@ class _WashHistoryPageState extends State<WashHistoryPage> {
       final dateTime = DateTime.parse(dateTimeString).toLocal();
       return DateFormat('dd/MM/yyyy hh:mma').format(dateTime).toLowerCase();
     } catch (e) {
-      debugPrint('⚠️ [WashHistory] Error formatting date: $e');
+      debugPrint('⚠️ Error formatting date: $e');
       return dateTimeString;
     }
   }
@@ -240,7 +363,10 @@ class _WashHistoryPageState extends State<WashHistoryPage> {
   Widget _buildHistoryCard(Map<String, dynamic> booking) {
     final hubName = booking['hubname']?.toString() ?? 'Unknown Hub';
     final deviceId = booking['deviceid']?.toString() ?? 'N/A';
-    final endTime = booking['device_booked_user_end_time']?.toString() ?? '';
+    final endTime =
+        booking['device_booked_user_end_time']?.toString() ??
+        booking['endtime']?.toString() ??
+        '';
 
     // Parse and format amount
     final amountValue = booking['booked_user_amount'];
@@ -267,12 +393,10 @@ class _WashHistoryPageState extends State<WashHistoryPage> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Top row: Hub Name and Machine ID
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Hub Name
               Expanded(
                 flex: 2,
                 child: Column(
@@ -299,7 +423,6 @@ class _WashHistoryPageState extends State<WashHistoryPage> {
                 ),
               ),
               const SizedBox(width: 16),
-              // Machine ID
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -324,7 +447,6 @@ class _WashHistoryPageState extends State<WashHistoryPage> {
                   ],
                 ),
               ),
-              // Completed Badge
               Container(
                 padding: const EdgeInsets.symmetric(
                   horizontal: 16,
@@ -346,12 +468,10 @@ class _WashHistoryPageState extends State<WashHistoryPage> {
             ],
           ),
           const SizedBox(height: 16),
-          // Bottom row: Date and Amount
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
-              // Date
               Text(
                 endTime.isNotEmpty ? _formatDateTime(endTime) : 'N/A',
                 style: TextStyle(
@@ -360,7 +480,6 @@ class _WashHistoryPageState extends State<WashHistoryPage> {
                   fontWeight: FontWeight.w400,
                 ),
               ),
-              // Amount with QK WASH label
               Column(
                 crossAxisAlignment: CrossAxisAlignment.end,
                 children: [

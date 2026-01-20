@@ -714,25 +714,25 @@ class _RunningJobsPageState extends State<RunningJobsPage> {
             'Scan QR code to start a wash',
             style: TextStyle(fontSize: 14, color: Colors.grey[500]),
           ),
-          const SizedBox(height: 16),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-            decoration: BoxDecoration(
-              color: Colors.blue[50],
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(Icons.info_outline, size: 16, color: Colors.blue[700]),
-                const SizedBox(width: 8),
-                Text(
-                  'Completed washes appear in History',
-                  style: TextStyle(fontSize: 12, color: Colors.blue[700]),
-                ),
-              ],
-            ),
-          ),
+          // const SizedBox(height: 16),
+          // Container(
+          //   padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          //   decoration: BoxDecoration(
+          //     color: Colors.blue[50],
+          //     borderRadius: BorderRadius.circular(8),
+          //   ),
+          //   // child: Row(
+          //   //   mainAxisSize: MainAxisSize.min,
+          //   //   children: [
+          //   //     Icon(Icons.info_outline, size: 16, color: Colors.blue[700]),
+          //   //     const SizedBox(width: 8),
+          //   //     Text(
+          //   //       'Completed washes appear in History',
+          //   //       style: TextStyle(fontSize: 12, color: Colors.blue[700]),
+          //   //     ),
+          //   //   ],
+          //   // ),
+          // ),
         ],
       ),
     );

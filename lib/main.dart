@@ -1,7 +1,5 @@
 import 'package:flutter/material.dart';
 
-import 'package:internship_duxoff_hub/views/loginpage.dart';
-import 'package:internship_duxoff_hub/views/qkwashome.dart';
 import 'package:internship_duxoff_hub/views/splash_screen.dart';
 
 void main() async {
