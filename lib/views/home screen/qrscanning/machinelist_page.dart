@@ -19,9 +19,8 @@ class MachineListPage extends StatefulWidget {
 }
 
 class _MachineListPageState extends State<MachineListPage> {
-  String selectedWashMode = 'Quick';
-  String selectedDetergent = 'O3 Treat';
-  String selectedWashTime = '15 Min';
+  String selectedWashMode = '';
+  int washTimeMinutes = 0; // Start with 0
   bool detergentPreferenceEnabled = true;
 
   String _formatEndTime(String? endTimeStr) {
@@ -35,25 +34,24 @@ class _MachineListPageState extends State<MachineListPage> {
     }
   }
 
+  // Calculate end time based on current time + wash duration
+  String _calculateEndTime(int minutes) {
+    final now = DateTime.now();
+    final endTime = now.add(Duration(minutes: minutes));
+    return DateFormat('h:mm a').format(endTime).toLowerCase();
+  }
+
   double _calculateTotalPrice() {
-    double basePrice = 50.0;
-    double detergentPrice = detergentPreferenceEnabled ? 15.0 : 0.0;
+    double offerPrice = 0.0;
 
-    // Add price based on wash mode
-    if (selectedWashMode == 'Steam') {
-      basePrice += 25.0;
-    } else if (selectedWashMode == 'Custom') {
-      basePrice += 35.0;
+    // Wash mode pricing (offer price)
+    if (selectedWashMode == 'Quick Wash') {
+      offerPrice = 1.0;
+    } else if (selectedWashMode == 'Normal Wash') {
+      offerPrice = 100.0;
     }
 
-    // Add price based on wash time
-    if (selectedWashTime == '30 Min') {
-      basePrice += 20.0;
-    } else if (selectedWashTime == '45 Min') {
-      basePrice += 40.0;
-    }
-
-    return basePrice + detergentPrice;
+    return offerPrice;
   }
 
   @override
@@ -308,11 +306,10 @@ class _MachineListPageState extends State<MachineListPage> {
         '${deviceType.toLowerCase().substring(0, 1).toUpperCase()}${deviceType.toLowerCase().substring(1)} ${deviceId.toString().padLeft(2, '0')}';
     final String machineId = '#${deviceId.toString()}';
 
-    // Reset selections to default when opening modal
+    // Reset to default values
     setState(() {
-      selectedWashMode = 'Quick';
-      selectedDetergent = 'O3 Treat';
-      selectedWashTime = '15 Min';
+      selectedWashMode = '';
+      washTimeMinutes = 0; // Start with 0, will be set when mode is selected
       detergentPreferenceEnabled = true;
     });
 
@@ -410,7 +407,7 @@ class _MachineListPageState extends State<MachineListPage> {
                                       ),
                                       SizedBox(height: 4),
                                       Text(
-                                        'Free',
+                                        'Ready',
                                         style: TextStyle(
                                           fontSize: 14,
                                           color: Color(0xFF2196F3),
@@ -435,39 +432,30 @@ class _MachineListPageState extends State<MachineListPage> {
                             Row(
                               children: [
                                 _buildModalOptionButton(
-                                  'Quick',
-                                  selectedWashMode == 'Quick',
+                                  'Quick Wash',
+                                  selectedWashMode == 'Quick Wash',
                                   setModalState,
                                   () {
                                     setModalState(() {
                                       setState(() {
-                                        selectedWashMode = 'Quick';
+                                        selectedWashMode = 'Quick Wash';
+                                        washTimeMinutes =
+                                            30; // Auto set to 30 min
                                       });
                                     });
                                   },
                                 ),
                                 const SizedBox(width: 10),
                                 _buildModalOptionButton(
-                                  'Steam',
-                                  selectedWashMode == 'Steam',
+                                  'Normal Wash',
+                                  selectedWashMode == 'Normal Wash',
                                   setModalState,
                                   () {
                                     setModalState(() {
                                       setState(() {
-                                        selectedWashMode = 'Steam';
-                                      });
-                                    });
-                                  },
-                                ),
-                                const SizedBox(width: 10),
-                                _buildModalOptionButton(
-                                  'Custom',
-                                  selectedWashMode == 'Custom',
-                                  setModalState,
-                                  () {
-                                    setModalState(() {
-                                      setState(() {
-                                        selectedWashMode = 'Custom';
+                                        selectedWashMode = 'Normal Wash';
+                                        washTimeMinutes =
+                                            40; // Auto set to 40 min
                                       });
                                     });
                                   },
@@ -475,161 +463,62 @@ class _MachineListPageState extends State<MachineListPage> {
                               ],
                             ),
                             const SizedBox(height: 24),
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                              children: [
-                                const Text(
-                                  'Detergent preference',
-                                  style: TextStyle(
-                                    fontSize: 15,
-                                    fontWeight: FontWeight.w600,
-                                    color: Colors.black87,
-                                  ),
+
+                            // Time & End Time section (non-editable) - Only show after wash mode selection
+                            if (selectedWashMode.isNotEmpty) ...[
+                              const Text(
+                                'Time & End Time',
+                                style: TextStyle(
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.w600,
+                                  color: Colors.black87,
                                 ),
-                                Switch(
-                                  value: detergentPreferenceEnabled,
-                                  onChanged: (value) {
-                                    setModalState(() {
-                                      setState(() {
-                                        detergentPreferenceEnabled = value;
-                                      });
-                                    });
-                                  },
-                                  activeColor: const Color(0xFF2196F3),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 12),
-                            // Only show detergent options if enabled
-                            if (detergentPreferenceEnabled)
+                              ),
+                              const SizedBox(height: 12),
                               Row(
                                 children: [
-                                  _buildModalOptionButton(
-                                    'O3 Treat',
-                                    selectedDetergent == 'O3 Treat',
-                                    setModalState,
-                                    () {
-                                      setModalState(() {
-                                        setState(() {
-                                          selectedDetergent = 'O3 Treat';
-                                        });
-                                      });
-                                    },
-                                  ),
-                                  const SizedBox(width: 10),
-                                  _buildModalOptionButton(
-                                    'Deterge+',
-                                    selectedDetergent == 'Deterge+',
-                                    setModalState,
-                                    () {
-                                      setModalState(() {
-                                        setState(() {
-                                          selectedDetergent = 'Deterge+';
-                                        });
-                                      });
-                                    },
-                                  ),
-                                  const SizedBox(width: 10),
-                                  _buildModalOptionButton(
-                                    'Stiff Ultra',
-                                    selectedDetergent == 'Stiff Ultra',
-                                    setModalState,
-                                    () {
-                                      setModalState(() {
-                                        setState(() {
-                                          selectedDetergent = 'Stiff Ultra';
-                                        });
-                                      });
-                                    },
-                                  ),
-                                ],
-                              )
-                            else
-                              Container(
-                                padding: const EdgeInsets.all(12),
-                                decoration: BoxDecoration(
-                                  color: Colors.grey[100],
-                                  borderRadius: BorderRadius.circular(8),
-                                ),
-                                child: Row(
-                                  children: [
-                                    Icon(
-                                      Icons.info_outline,
-                                      size: 18,
-                                      color: Colors.grey[600],
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 20,
+                                      vertical: 12,
                                     ),
-                                    const SizedBox(width: 8),
-                                    Expanded(
-                                      child: Text(
-                                        'Detergent preference is disabled',
-                                        style: TextStyle(
-                                          fontSize: 13,
-                                          color: Colors.grey[600],
-                                        ),
+                                    decoration: BoxDecoration(
+                                      border: Border.all(
+                                        color: const Color(0xFF2196F3),
+                                        width: 1.5,
+                                      ),
+                                      borderRadius: BorderRadius.circular(6),
+                                    ),
+                                    child: Text(
+                                      '$washTimeMinutes min',
+                                      style: const TextStyle(
+                                        fontSize: 13,
+                                        fontWeight: FontWeight.w500,
+                                        color: Color(0xFF2196F3),
                                       ),
                                     ),
-                                  ],
-                                ),
+                                  ),
+                                  const SizedBox(width: 12),
+                                  Expanded(
+                                    child: Text(
+                                      'End Time: ${_calculateEndTime(washTimeMinutes)}',
+                                      style: TextStyle(
+                                        fontSize: 13,
+                                        color: Colors.grey[700],
+                                        fontWeight: FontWeight.w400,
+                                      ),
+                                    ),
+                                  ),
+                                ],
                               ),
-                            const SizedBox(height: 24),
-                            const Text(
-                              'Wash Time',
-                              style: TextStyle(
-                                fontSize: 15,
-                                fontWeight: FontWeight.w600,
-                                color: Colors.black87,
-                              ),
-                            ),
-                            const SizedBox(height: 12),
-                            Row(
-                              children: [
-                                _buildModalOptionButton(
-                                  '15 Min',
-                                  selectedWashTime == '15 Min',
-                                  setModalState,
-                                  () {
-                                    setModalState(() {
-                                      setState(() {
-                                        selectedWashTime = '15 Min';
-                                      });
-                                    });
-                                  },
-                                ),
-                                const SizedBox(width: 10),
-                                _buildModalOptionButton(
-                                  '30 Min',
-                                  selectedWashTime == '30 Min',
-                                  setModalState,
-                                  () {
-                                    setModalState(() {
-                                      setState(() {
-                                        selectedWashTime = '30 Min';
-                                      });
-                                    });
-                                  },
-                                ),
-                                const SizedBox(width: 10),
-                                _buildModalOptionButton(
-                                  '45 Min',
-                                  selectedWashTime == '45 Min',
-                                  setModalState,
-                                  () {
-                                    setModalState(() {
-                                      setState(() {
-                                        selectedWashTime = '45 Min';
-                                      });
-                                    });
-                                  },
-                                ),
-                              ],
-                            ),
+                            ],
+
                             const SizedBox(height: 32),
                             Center(
                               child: ElevatedButton(
                                 onPressed: () {
                                   Navigator.pop(context);
 
-                                  // Navigate to your existing payment details page
                                   Navigator.push(
                                     context,
                                     MaterialPageRoute(
@@ -638,12 +527,8 @@ class _MachineListPageState extends State<MachineListPage> {
                                         hubId: widget.hubId,
                                         deviceId: device['deviceid'] ?? 0,
                                         machineId: machineId,
-                                        washType: deviceType,
                                         washMode: selectedWashMode,
-                                        washTime: selectedWashTime,
-                                        detergent: selectedDetergent,
-                                        detergentEnabled:
-                                            detergentPreferenceEnabled,
+                                        washTime: '$washTimeMinutes Min',
                                         totalPrice: _calculateTotalPrice(),
                                       ),
                                     ),
@@ -696,13 +581,10 @@ class _MachineListPageState extends State<MachineListPage> {
       child: GestureDetector(
         onTap: onTap,
         child: Container(
-          padding: const EdgeInsets.symmetric(vertical: 6),
+          padding: const EdgeInsets.symmetric(vertical: 10),
           decoration: BoxDecoration(
-            color: Colors.white,
-            border: Border.all(
-              color: isSelected ? const Color(0xFF2196F3) : Colors.grey[300]!,
-              width: 1.5,
-            ),
+            color: isSelected ? const Color(0xFF2196F3) : Colors.white,
+            border: Border.all(color: const Color(0xFF2196F3), width: 1.5),
             borderRadius: BorderRadius.circular(6),
           ),
           child: Center(
@@ -711,7 +593,7 @@ class _MachineListPageState extends State<MachineListPage> {
               style: TextStyle(
                 fontSize: 13,
                 fontWeight: FontWeight.w500,
-                color: isSelected ? const Color(0xFF2196F3) : Colors.grey[700],
+                color: isSelected ? Colors.white : const Color(0xFF2196F3),
               ),
             ),
           ),

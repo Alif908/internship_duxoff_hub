@@ -31,19 +31,19 @@ class _OtpVerifyPageState extends State<OtpVerifyPage> {
   final List<FocusNode> _focusNodes = List.generate(4, (index) => FocusNode());
   bool _isLoading = false;
 
-  
   int _resendTimer = 30;
   bool _canResend = false;
   Timer? _timer;
 
- 
   String? _storedOtp;
+  bool _hasAutoFilled = false; // Track if auto-fill has happened
 
   @override
   void initState() {
     super.initState();
     _startResendTimer();
     _loadStoredOtp();
+    _scheduleAutoFill(); // Schedule auto-fill after 3 seconds
   }
 
   @override
@@ -58,7 +58,43 @@ class _OtpVerifyPageState extends State<OtpVerifyPage> {
     super.dispose();
   }
 
-  
+  /// AUTO-FILL OTP AFTER 3 SECONDS
+  void _scheduleAutoFill() {
+    Future.delayed(const Duration(seconds: 3), () {
+      if (mounted && !_hasAutoFilled) {
+        _autoFillOtp();
+      }
+    });
+  }
+
+  /// Auto-fill the OTP from stored value
+  void _autoFillOtp() async {
+    final otpToFill = _storedOtp ?? widget.otpFromApi;
+
+    if (otpToFill.length == 4) {
+      setState(() {
+        _hasAutoFilled = true;
+      });
+
+      debugPrint('🔄 Auto-filling OTP: $otpToFill');
+
+      // Fill each digit with a small animation delay
+      for (int i = 0; i < 4; i++) {
+        await Future.delayed(Duration(milliseconds: 100 * i));
+        if (mounted) {
+          _otpControllers[i].text = otpToFill[i];
+        }
+      }
+
+      // Wait 2 seconds then auto-submit
+      await Future.delayed(const Duration(seconds: 2));
+
+      if (mounted) {
+        _handleSubmit();
+      }
+    }
+  }
+
   Future<void> _loadStoredOtp() async {
     try {
       final prefs = await SharedPreferences.getInstance();
@@ -67,7 +103,6 @@ class _OtpVerifyPageState extends State<OtpVerifyPage> {
       debugPrint('========== LOADING OTP FROM STORAGE ==========');
       debugPrint('Stored OTP: $_storedOtp');
 
-      
       final otpTimestamp = prefs.getString('otp_timestamp');
       if (otpTimestamp != null) {
         final timestamp = DateTime.parse(otpTimestamp);
@@ -113,7 +148,6 @@ class _OtpVerifyPageState extends State<OtpVerifyPage> {
     });
   }
 
-  
   Future<void> _handleSubmit() async {
     String enteredOtp = _otpControllers.map((c) => c.text).join();
 
@@ -122,7 +156,6 @@ class _OtpVerifyPageState extends State<OtpVerifyPage> {
       return;
     }
 
-    
     final otpToVerify = _storedOtp ?? widget.otpFromApi;
 
     if (enteredOtp != otpToVerify) {
@@ -138,7 +171,6 @@ class _OtpVerifyPageState extends State<OtpVerifyPage> {
       debugPrint('Name: ${widget.userName}');
       debugPrint('User Type: ${widget.userType}');
 
-      
       final response = await AuthApi.addOrUpdateUser(
         name: widget.userName,
         mobile: widget.mobileNumber,
@@ -148,7 +180,6 @@ class _OtpVerifyPageState extends State<OtpVerifyPage> {
       debugPrint('Full API Response: $response');
       debugPrint('Response Keys: ${response.keys.toList()}');
 
-      
       if (!response.containsKey('sessionToken') ||
           response['sessionToken'] == null ||
           response['sessionToken'].toString().isEmpty) {
@@ -157,7 +188,6 @@ class _OtpVerifyPageState extends State<OtpVerifyPage> {
 
       final prefs = await SharedPreferences.getInstance();
 
-      
       int userId = 0;
 
       if (response.containsKey('userid')) {
@@ -180,7 +210,6 @@ class _OtpVerifyPageState extends State<OtpVerifyPage> {
       debugPrint('Mobile: ${widget.mobileNumber}');
       debugPrint('Name: ${widget.userName}');
 
-      
       if (userId == 0) {
         debugPrint('❌ CRITICAL: User ID is still 0!');
         debugPrint('❌ This will cause payment to fail');
@@ -190,7 +219,6 @@ class _OtpVerifyPageState extends State<OtpVerifyPage> {
         );
       }
 
-      
       await prefs.setString(
         'session_token',
         response['sessionToken'].toString(),
@@ -214,11 +242,9 @@ class _OtpVerifyPageState extends State<OtpVerifyPage> {
         response['userstatus']?.toString() ?? widget.userType,
       );
 
-      
       await prefs.remove('current_otp');
       await prefs.remove('otp_timestamp');
 
-      
       debugPrint('========== VERIFICATION ==========');
       debugPrint('Saved user_id: ${prefs.getInt('user_id')}');
       debugPrint('Saved userid: ${prefs.getInt('userid')}');
@@ -231,7 +257,6 @@ class _OtpVerifyPageState extends State<OtpVerifyPage> {
         'Saved sessionToken: ${prefs.getString('sessionToken')?.substring(0, 10)}...',
       );
 
-      
       debugPrint('📋 All SharedPreferences keys:');
       for (var key in prefs.getKeys()) {
         final value = prefs.get(key);
@@ -247,9 +272,9 @@ class _OtpVerifyPageState extends State<OtpVerifyPage> {
 
       _showSnackBar('Login successful!', isError: false);
 
-      await Future.delayed(const Duration(milliseconds: 500));
+      // Wait 2 seconds before navigation
+      await Future.delayed(const Duration(seconds: 2));
 
-     
       if (mounted) {
         Navigator.pushReplacement(
           context,
@@ -293,19 +318,17 @@ class _OtpVerifyPageState extends State<OtpVerifyPage> {
       final newOtp = response['otp'].toString();
       final prefs = await SharedPreferences.getInstance();
 
-      
       await prefs.setString('current_otp', newOtp);
       await prefs.setString('otp_timestamp', DateTime.now().toIso8601String());
 
-      
       setState(() {
         _storedOtp = newOtp;
+        _hasAutoFilled = false; // Reset auto-fill flag
       });
 
       debugPrint('NEW OTP: $newOtp');
       debugPrint('===================================');
 
-      
       for (var controller in _otpControllers) {
         controller.clear();
       }
@@ -316,6 +339,9 @@ class _OtpVerifyPageState extends State<OtpVerifyPage> {
       setState(() => _isLoading = false);
 
       _showSnackBar('OTP resent successfully', isError: false);
+
+      // Schedule auto-fill for the new OTP
+      _scheduleAutoFill();
     } catch (e) {
       setState(() => _isLoading = false);
 

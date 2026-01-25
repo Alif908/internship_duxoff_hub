@@ -2,24 +2,22 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<key>CFBundleName</key>
+	<string>Qkwash</string>
+	<key>CFBundleDisplayName</key>
+	<string>Qkwash</string>
 	<key>NSCameraUsageDescription</key>
-	<string>We need camera access to update your profile picture</string>
+	<string>We need camera access to scan QR codes and update your profile picture</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>We need photo library access to update your profile picture</string>
-	<key>NSCameraUsageDescription</key>
-	<string>We need camera access to scan QR codes</string>
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
-	<key>CFBundleDisplayName</key>
-	<string>Internship Duxoff Hub</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
 	<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
-	<key>CFBundleName</key>
-	<string>internship_duxoff_hub</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>

@@ -7,8 +7,8 @@ import 'dart:async';
 class WashStartPage extends StatefulWidget {
   final String machineId;
   final String hubName;
-  final String? deviceId; // ✅ Add deviceId to track the job
-  final String? hubId; // ✅ Add hubId
+  final String? deviceId;
+  final String? hubId;
 
   const WashStartPage({
     super.key,
@@ -25,13 +25,11 @@ class WashStartPage extends StatefulWidget {
 class _WashStartPageState extends State<WashStartPage> {
   bool isStarting = false;
 
-  /// Start wash and navigate to running jobs page
   void _startWash() async {
     setState(() {
       isStarting = true;
     });
 
-    // Show success message
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
         content: Text('Wash started successfully!'),
@@ -40,12 +38,10 @@ class _WashStartPageState extends State<WashStartPage> {
       ),
     );
 
-    // Wait a moment for the success message to show
     await Future.delayed(const Duration(milliseconds: 500));
 
     if (!mounted) return;
 
-    // Navigate to running jobs page
     Navigator.pushReplacement(
       context,
       MaterialPageRoute(builder: (context) => const RunningJobsPage()),
@@ -82,7 +78,6 @@ class _WashStartPageState extends State<WashStartPage> {
                   children: [
                     const SizedBox(height: 20),
 
-                    // Washing Machine Illustration
                     Image.asset(
                       'assets/images/startimg.png',
                       width: double.infinity,
@@ -107,7 +102,6 @@ class _WashStartPageState extends State<WashStartPage> {
 
                     const SizedBox(height: 40),
 
-                    // Instructions
                     const Text(
                       'Load your clothes',
                       style: TextStyle(
@@ -150,7 +144,6 @@ class _WashStartPageState extends State<WashStartPage> {
               ),
             ),
 
-            // Start Button - Fixed at bottom
             Padding(
               padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
               child: SizedBox(

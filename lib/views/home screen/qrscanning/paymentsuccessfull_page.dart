@@ -32,7 +32,6 @@ class PaymentSuccessPage extends StatelessWidget {
           children: [
             const Spacer(flex: 1),
 
-            // Illustration Image
             Image.asset(
               'assets/images/paymentsuccessfull.png',
               height: 280,
@@ -41,7 +40,6 @@ class PaymentSuccessPage extends StatelessWidget {
 
             const SizedBox(height: 24),
 
-            // Success Icon (using tick-circle.png)
             Image.asset(
               'assets/images/tick-circle.png',
               width: 60,
@@ -51,7 +49,6 @@ class PaymentSuccessPage extends StatelessWidget {
 
             const SizedBox(height: 16),
 
-            // Success Message
             const Text(
               'Payment Successful!',
               style: TextStyle(
@@ -63,7 +60,6 @@ class PaymentSuccessPage extends StatelessWidget {
 
             const SizedBox(height: 8),
 
-            // Total Payment Label
             Text(
               'Total Payment',
               style: TextStyle(fontSize: 13, color: Colors.grey[600]),
@@ -71,7 +67,6 @@ class PaymentSuccessPage extends StatelessWidget {
 
             const SizedBox(height: 4),
 
-            // Amount
             Text(
               '₹ ${amount.toStringAsFixed(2)}',
               style: const TextStyle(
@@ -83,7 +78,6 @@ class PaymentSuccessPage extends StatelessWidget {
 
             const Spacer(flex: 2),
 
-            // Continue Button
             Padding(
               padding: const EdgeInsets.fromLTRB(24, 0, 24, 32),
               child: SizedBox(
@@ -96,7 +90,6 @@ class PaymentSuccessPage extends StatelessWidget {
                         builder: (context) => WashStartPage(
                           machineId: machineId,
                           hubName: hubName,
-                          
                         ),
                       ),
                     );

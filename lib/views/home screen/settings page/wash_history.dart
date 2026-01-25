@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:internship_duxoff_hub/services/home_api_service.dart';
+import 'package:internship_duxoff_hub/views/home%20screen/qrscanning/machinelist_page.dart';
 import 'package:intl/intl.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
@@ -23,10 +24,58 @@ class _WashHistoryPageState extends State<WashHistoryPage> {
   @override
   void initState() {
     super.initState();
+    _cleanupDuplicateLocalBookings();
     _loadHistory();
   }
 
-  /// ✅ NEW: Load local bookings from SharedPreferences
+  Future<void> _cleanupDuplicateLocalBookings() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final allKeys = prefs.getKeys();
+
+      Map<String, String> uniqueBookings = {};
+      List<String> keysToRemove = [];
+
+      for (String key in allKeys) {
+        if (key.startsWith('booking_')) {
+          try {
+            final bookingJson = prefs.getString(key);
+            if (bookingJson != null) {
+              final booking = jsonDecode(bookingJson);
+              final deviceId = (booking['deviceid'] ?? '').toString();
+              final endTime = (booking['endtime'] ?? '').toString();
+
+              if (deviceId.isNotEmpty && endTime.isNotEmpty) {
+                final uniqueKey = '${deviceId}_$endTime';
+
+                if (uniqueBookings.containsKey(uniqueKey)) {
+                  keysToRemove.add(key);
+                  debugPrint(
+                    '🗑️ Marking duplicate local booking for removal: $key',
+                  );
+                } else {
+                  uniqueBookings[uniqueKey] = key;
+                }
+              }
+            }
+          } catch (e) {
+            debugPrint('Error checking $key: $e');
+          }
+        }
+      }
+
+      for (String key in keysToRemove) {
+        await prefs.remove(key);
+      }
+
+      if (keysToRemove.isNotEmpty) {
+        debugPrint('✅ Removed ${keysToRemove.length} duplicate local bookings');
+      }
+    } catch (e) {
+      debugPrint('Error in cleanup: $e');
+    }
+  }
+
   Future<List<Map<String, dynamic>>> _loadLocalBookings() async {
     try {
       final prefs = await SharedPreferences.getInstance();
@@ -41,30 +90,28 @@ class _WashHistoryPageState extends State<WashHistoryPage> {
             if (bookingJson != null && bookingJson.isNotEmpty) {
               final booking = jsonDecode(bookingJson) as Map<String, dynamic>;
 
-              // Add source indicator
               booking['_source'] = 'local';
               booking['_key'] = key;
 
               localBookings.add(booking);
               debugPrint(
-                '📦 Loaded local booking: $key with amount: ${booking['amount']}',
+                'Loaded local booking: $key with amount: ${booking['amount']}',
               );
             }
           } catch (e) {
-            debugPrint('⚠️ Error parsing booking $key: $e');
+            debugPrint('Error parsing booking $key: $e');
           }
         }
       }
 
-      debugPrint('✅ Found ${localBookings.length} local bookings');
+      debugPrint('Found ${localBookings.length} local bookings');
       return localBookings;
     } catch (e) {
-      debugPrint('❌ Error loading local bookings: $e');
+      debugPrint('Error loading local bookings: $e');
       return [];
     }
   }
 
-  /// ✅ ENHANCED: Merge API data with local storage
   Future<void> _loadHistory() async {
     if (!mounted) return;
 
@@ -74,108 +121,194 @@ class _WashHistoryPageState extends State<WashHistoryPage> {
     });
 
     try {
-      // Load both API and local data
       final apiHistory = await HomeApi.getBookingHistory();
       final localBookings = await _loadLocalBookings();
 
       if (!mounted) return;
 
-      // Create a merged list
-      List<Map<String, dynamic>> mergedHistory = [];
+      debugPrint('========== DEDUPLICATION PROCESS ==========');
+      debugPrint('API history count: ${apiHistory.length}');
+      debugPrint('Local bookings count: ${localBookings.length}');
 
-      // Start with API data
+      Map<String, Map<String, dynamic>> uniqueBookings = {};
+
+      // Process API history first (API data takes priority)
       for (var apiItem in apiHistory) {
-        final deviceId = apiItem['deviceid']?.toString();
-        final endTime = apiItem['device_booked_user_end_time']?.toString();
+        final deviceId = (apiItem['deviceid'] ?? '').toString();
+        final endTimeRaw =
+            (apiItem['device_booked_user_end_time'] ?? apiItem['endtime'] ?? '')
+                .toString();
 
-        // Try to find matching local booking
-        Map<String, dynamic>? matchingLocal;
-        for (var localItem in localBookings) {
-          if (localItem['deviceid']?.toString() == deviceId &&
-              localItem['endtime']?.toString() == endTime) {
-            matchingLocal = localItem;
-            break;
-          }
+        if (deviceId.isEmpty || endTimeRaw.isEmpty) {
+          debugPrint('⚠️ Skipping API item with missing deviceId or endTime');
+          continue;
         }
 
-        // If we found a match and API amount is 0, use local amount
-        if (matchingLocal != null) {
-          final apiAmount =
+        // Normalize timestamp
+        String normalizedEndTime = endTimeRaw;
+        try {
+          final dt = DateTime.parse(endTimeRaw);
+          normalizedEndTime =
+              '${dt.year.toString().padLeft(4, '0')}-${dt.month.toString().padLeft(2, '0')}-${dt.day.toString().padLeft(2, '0')}T${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}:${dt.second.toString().padLeft(2, '0')}Z';
+        } catch (e) {
+          debugPrint('⚠️ Could not parse timestamp: $endTimeRaw');
+        }
+
+        final uniqueKey = '${deviceId}_$normalizedEndTime';
+
+        final currentAmount =
+            double.tryParse(
+              (apiItem['booked_user_amount'] ?? '0').toString(),
+            ) ??
+            0.0;
+
+        if (uniqueBookings.containsKey(uniqueKey)) {
+          final existingAmount =
               double.tryParse(
-                apiItem['booked_user_amount']?.toString() ?? '0',
+                (uniqueBookings[uniqueKey]!['booked_user_amount'] ?? '0')
+                    .toString(),
               ) ??
               0.0;
-          final localAmount =
-              double.tryParse(matchingLocal['amount']?.toString() ?? '0') ??
-              0.0;
 
-          if (apiAmount == 0 && localAmount > 0) {
-            apiItem['booked_user_amount'] = localAmount;
-            apiItem['_amount_source'] = 'local';
+          if (currentAmount > 0 && existingAmount == 0) {
+            uniqueBookings[uniqueKey] = apiItem;
             debugPrint(
-              '✅ Using local amount for device $deviceId: ₹$localAmount',
+              '✅ REPLACED duplicate with non-zero amount: $uniqueKey (₹$currentAmount replaces ₹$existingAmount)',
             );
+          } else {
+            debugPrint(
+              '⚠️ Duplicate found, keeping existing: $uniqueKey (existing: ₹$existingAmount, new: ₹$currentAmount)',
+            );
+          }
+          continue;
+        }
+
+        // Find matching local booking to get amount if API amount is 0
+        if (currentAmount == 0) {
+          Map<String, dynamic>? matchingLocal;
+          for (var localItem in localBookings) {
+            final localDeviceId = (localItem['deviceid'] ?? '').toString();
+            final localEndTimeRaw = (localItem['endtime'] ?? '').toString();
+
+            String normalizedLocalEndTime = localEndTimeRaw;
+            try {
+              final dt = DateTime.parse(localEndTimeRaw);
+              normalizedLocalEndTime =
+                  '${dt.year.toString().padLeft(4, '0')}-${dt.month.toString().padLeft(2, '0')}-${dt.day.toString().padLeft(2, '0')}T${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}:${dt.second.toString().padLeft(2, '0')}Z';
+            } catch (e) {}
+
+            if (localDeviceId == deviceId &&
+                normalizedLocalEndTime == normalizedEndTime) {
+              matchingLocal = localItem;
+              break;
+            }
+          }
+
+          if (matchingLocal != null) {
+            final localAmount =
+                double.tryParse((matchingLocal['amount'] ?? '0').toString()) ??
+                0.0;
+            if (localAmount > 0) {
+              apiItem['booked_user_amount'] = localAmount;
+              debugPrint('✅ Using local amount ₹$localAmount for $uniqueKey');
+            }
           }
         }
 
-        mergedHistory.add(apiItem);
-      }
-
-      // Add local bookings that aren't in API response
-      for (var localItem in localBookings) {
-        final deviceId = localItem['deviceid']?.toString();
-        final endTime = localItem['endtime']?.toString();
-
-        bool existsInApi = mergedHistory.any(
-          (apiItem) =>
-              apiItem['deviceid']?.toString() == deviceId &&
-              apiItem['device_booked_user_end_time']?.toString() == endTime,
+        uniqueBookings[uniqueKey] = apiItem;
+        debugPrint(
+          '✅ Added from API: $uniqueKey (₹${apiItem['booked_user_amount']})',
         );
-
-        if (!existsInApi) {
-          // Convert local format to API format
-          final normalizedLocal = {
-            'deviceid': localItem['deviceid'],
-            'hubname': localItem['hubname'],
-            'hubid': localItem['hubid'],
-            'machineid': localItem['machineid'],
-            'booked_user_amount': localItem['amount'],
-            'device_booked_user_end_time': localItem['endtime'],
-            'device_booked_user_start_time': localItem['starttime'],
-            'booked_user_selected_wash_mode': localItem['washmode'],
-            'booked_user_selected_duration': localItem['washtime'],
-            'booked_user_selected_detergent_preference': localItem['detergent'],
-            'paymentid': localItem['paymentid'],
-            '_source': 'local_only',
-          };
-
-          mergedHistory.add(normalizedLocal);
-          debugPrint('✅ Added local-only booking for device $deviceId');
-        }
       }
 
-      // Sort by date (most recent first)
+      // Process local-only bookings (not in API)
+      for (var localItem in localBookings) {
+        final deviceId = (localItem['deviceid'] ?? '').toString();
+        final endTimeRaw = (localItem['endtime'] ?? '').toString();
+
+        if (deviceId.isEmpty || endTimeRaw.isEmpty) {
+          debugPrint('⚠️ Skipping local item with missing deviceId or endTime');
+          continue;
+        }
+
+        String normalizedEndTime = endTimeRaw;
+        try {
+          final dt = DateTime.parse(endTimeRaw);
+          normalizedEndTime =
+              '${dt.year.toString().padLeft(4, '0')}-${dt.month.toString().padLeft(2, '0')}-${dt.day.toString().padLeft(2, '0')}T${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}:${dt.second.toString().padLeft(2, '0')}Z';
+        } catch (e) {
+          debugPrint('⚠️ Could not parse timestamp: $endTimeRaw');
+        }
+
+        final uniqueKey = '${deviceId}_$normalizedEndTime';
+
+        if (uniqueBookings.containsKey(uniqueKey)) {
+          debugPrint('⚠️ Local booking already in API: $uniqueKey - SKIPPING');
+          continue;
+        }
+
+        // Normalize local booking to match API format
+        final normalizedLocal = {
+          'deviceid': localItem['deviceid'],
+          'hubname': localItem['hubname'],
+          'hubid': localItem['hubid'],
+          'machineid': localItem['machineid'],
+          'booked_user_amount': localItem['amount'],
+          'device_booked_user_end_time': localItem['endtime'],
+          'device_booked_user_start_time': localItem['starttime'],
+          'booked_user_selected_wash_mode': localItem['washmode'],
+          'booked_user_selected_duration': localItem['washtime'],
+          'booked_user_selected_detergent_preference': localItem['detergent'],
+          'paymentid': localItem['paymentid'],
+          '_source': 'local_only',
+        };
+
+        uniqueBookings[uniqueKey] = normalizedLocal;
+        debugPrint('✅ Added local-only: $uniqueKey');
+      }
+
+      debugPrint('📊 Total unique bookings: ${uniqueBookings.length}');
+
+      List<Map<String, dynamic>> mergedHistory = uniqueBookings.values.toList();
+
+      // Sort by end time (newest first)
       mergedHistory.sort((a, b) {
         try {
           final aTimeStr =
-              a['device_booked_user_end_time']?.toString() ??
-              a['endtime']?.toString();
+              (a['device_booked_user_end_time'] ?? a['endtime'] ?? '')
+                  .toString();
           final bTimeStr =
-              b['device_booked_user_end_time']?.toString() ??
-              b['endtime']?.toString();
+              (b['device_booked_user_end_time'] ?? b['endtime'] ?? '')
+                  .toString();
 
-          if (aTimeStr == null || aTimeStr.isEmpty) return 1;
-          if (bTimeStr == null || bTimeStr.isEmpty) return -1;
+          if (aTimeStr.isEmpty) return 1;
+          if (bTimeStr.isEmpty) return -1;
 
-          final dateA = DateTime.parse(aTimeStr);
-          final dateB = DateTime.parse(bTimeStr);
+          final aDate = DateTime.parse(aTimeStr);
+          final bDate = DateTime.parse(bTimeStr);
 
-          return dateB.compareTo(dateA);
+          return bDate.compareTo(aDate);
         } catch (e) {
-          debugPrint('⚠️ Error sorting dates: $e');
+          debugPrint('⚠️ Error sorting: $e');
           return 0;
         }
       });
+
+      debugPrint('========== FINAL RESULTS ==========');
+      for (
+        int i = 0;
+        i < (mergedHistory.length > 3 ? 3 : mergedHistory.length);
+        i++
+      ) {
+        final item = mergedHistory[i];
+        debugPrint(
+          '  [$i] Device: ${item['deviceid']}, Amount: ₹${item['booked_user_amount']}, Time: ${item['device_booked_user_end_time'] ?? item['endtime']}',
+        );
+        debugPrint(
+          '       HubId: ${item['hubid']}, HubName: ${item['hubname']}',
+        );
+      }
+      debugPrint('=====================================');
 
       setState(() {
         _historyList = mergedHistory;
@@ -183,30 +316,37 @@ class _WashHistoryPageState extends State<WashHistoryPage> {
         _isLoading = false;
       });
 
-      debugPrint('✅ Total history records: ${_historyList.length}');
-
-      // Log amounts for verification
-      for (
-        var i = 0;
-        i < (_historyList.length > 5 ? 5 : _historyList.length);
-        i++
-      ) {
-        debugPrint(
-          '  Record $i: ₹${_historyList[i]['booked_user_amount']} (source: ${_historyList[i]['_amount_source'] ?? 'api'})',
-        );
-      }
+      debugPrint(
+        '✅ Successfully loaded ${_historyList.length} unique history items',
+      );
     } catch (e) {
       if (!mounted) return;
+
+      // Sanitize error message - remove URLs and technical details
+      String errorText = e.toString();
+
+      // Remove Exception prefix
+      if (errorText.startsWith('Exception: ')) {
+        errorText = errorText.substring(11);
+      }
+
+      // Remove URLs, URIs, and other sensitive info
+      errorText = errorText.replaceAll(RegExp(r'https?://[^\s,)]+'), '');
+      errorText = errorText.replaceAll(RegExp(r'uri=https?://[^\s,)]+'), '');
+      errorText = errorText.replaceAll(RegExp(r'\(OS Error[^)]*\)'), '');
 
       setState(() {
         _isLoading = false;
 
-        String errorText = e.toString();
-        if (errorText.startsWith('Exception: ')) {
-          errorText = errorText.substring(11);
-        }
-
-        if (errorText.contains('Mobile number not found') ||
+        // Provide user-friendly error messages
+        if (errorText.contains('ClientException') ||
+            errorText.contains('SocketException') ||
+            errorText.contains('Failed host lookup') ||
+            errorText.contains('No address associated') ||
+            errorText.contains('errno = 7')) {
+          _errorMessage =
+              'Unable to connect. Please check your internet connection.';
+        } else if (errorText.contains('Mobile number not found') ||
             errorText.contains('Session token not found') ||
             errorText.contains('Session expired') ||
             errorText.contains('not authenticated')) {
@@ -214,22 +354,18 @@ class _WashHistoryPageState extends State<WashHistoryPage> {
         } else if (errorText.contains('Authentication failed') ||
             errorText.contains('401')) {
           _errorMessage = 'Authentication failed. Please login again.';
-        } else if (errorText.contains('No internet connection') ||
-            errorText.contains('network')) {
-          _errorMessage = 'Network error. Check your connection.';
-        } else if (errorText.contains('timed out')) {
-          _errorMessage = 'Request timed out. Please try again.';
+        } else if (errorText.toLowerCase().contains('timeout')) {
+          _errorMessage = 'Connection timeout. Please try again.';
         } else if (errorText.contains('404')) {
           _errorMessage = '';
           _historyList = [];
           _filteredHistoryList = [];
         } else {
-          _errorMessage = errorText.isNotEmpty
-              ? errorText
-              : 'Failed to load history. Please try again.';
+          _errorMessage = 'Unable to load history. Please try again.';
         }
       });
 
+      // Log full error for debugging (won't be shown to users)
       debugPrint('❌ Error loading history: $e');
     }
   }
@@ -295,9 +431,91 @@ class _WashHistoryPageState extends State<WashHistoryPage> {
       final dateTime = DateTime.parse(dateTimeString).toLocal();
       return DateFormat('dd/MM/yyyy hh:mma').format(dateTime).toLowerCase();
     } catch (e) {
-      debugPrint('⚠️ Error formatting date: $e');
+      debugPrint('Error formatting date: $e');
       return dateTimeString;
     }
+  }
+
+  Future<void> _navigateToHub(Map<String, dynamic> booking) async {
+    final hubId = booking['hubid']?.toString();
+    final hubName = booking['hubname']?.toString();
+
+    debugPrint('========== NAVIGATING TO HUB ==========');
+    debugPrint('Hub ID: $hubId');
+    debugPrint('Hub Name: $hubName');
+    debugPrint('Full booking data: $booking');
+
+    if (hubId == null || hubId.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Hub information not available'),
+          backgroundColor: Colors.red,
+          duration: Duration(seconds: 2),
+        ),
+      );
+      return;
+    }
+
+    // Show loading indicator
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => const Center(
+        child: CircularProgressIndicator(
+          valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF4A90E2)),
+        ),
+      ),
+    );
+
+    try {
+      // Fetch hub details
+      debugPrint('Fetching hub details for hubId: $hubId');
+      final devices = await HomeApi.getHubDetails(hubId: hubId);
+
+      debugPrint('✅ Successfully fetched ${devices.length} devices');
+
+      if (!mounted) return;
+
+      // Close loading dialog
+      Navigator.pop(context);
+
+      // Navigate to machine list
+      await Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => MachineListPage(
+            hubId: hubId,
+            hubName: hubName ?? 'Unknown Hub',
+            devices: devices,
+          ),
+        ),
+      );
+
+      debugPrint('✅ Navigation successful');
+    } catch (e) {
+      debugPrint('❌ Navigation error: $e');
+
+      if (!mounted) return;
+
+      // Close loading dialog
+      Navigator.pop(context);
+
+      // Show error message
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Failed to load hub: ${e.toString()}'),
+          backgroundColor: Colors.red,
+          duration: const Duration(seconds: 3),
+          action: SnackBarAction(
+            label: 'Retry',
+            textColor: Colors.white,
+            onPressed: () => _navigateToHub(booking),
+          ),
+        ),
+      );
+    }
+
+    debugPrint('=======================================');
   }
 
   @override
@@ -319,9 +537,7 @@ class _WashHistoryPageState extends State<WashHistoryPage> {
         actions: [
           IconButton(
             icon: const Icon(Icons.filter_list, color: Colors.black87),
-            onPressed: () {
-              // Show filter bottom sheet
-            },
+            onPressed: () {},
           ),
         ],
       ),
@@ -362,13 +578,13 @@ class _WashHistoryPageState extends State<WashHistoryPage> {
 
   Widget _buildHistoryCard(Map<String, dynamic> booking) {
     final hubName = booking['hubname']?.toString() ?? 'Unknown Hub';
+    final hubId = booking['hubid']?.toString() ?? '';
     final deviceId = booking['deviceid']?.toString() ?? 'N/A';
     final endTime =
         booking['device_booked_user_end_time']?.toString() ??
         booking['endtime']?.toString() ??
         '';
 
-    // Parse and format amount
     final amountValue = booking['booked_user_amount'];
     String amount = '0.00';
     if (amountValue != null) {
@@ -376,136 +592,181 @@ class _WashHistoryPageState extends State<WashHistoryPage> {
       amount = parsedAmount.toStringAsFixed(2);
     }
 
-    return Container(
-      margin: const EdgeInsets.only(bottom: 16),
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.04),
-            blurRadius: 10,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(
-                flex: 2,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      'Hub Name',
-                      style: TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w600,
-                        color: Colors.black87,
+    debugPrint('History Card - Hub ID: $hubId, Hub Name: $hubName');
+
+    return GestureDetector(
+      onTap: () {
+        if (hubId.isEmpty) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Hub information not available'),
+              backgroundColor: Colors.red,
+              duration: Duration(seconds: 2),
+            ),
+          );
+          return;
+        }
+        _navigateToHub(booking);
+      },
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 16),
+        padding: const EdgeInsets.all(20),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(12),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.04),
+              blurRadius: 10,
+              offset: const Offset(0, 2),
+            ),
+          ],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  flex: 2,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'Hub Name',
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.black87,
+                        ),
                       ),
-                    ),
-                    const SizedBox(height: 6),
-                    Text(
-                      hubName.toLowerCase(),
-                      style: TextStyle(
-                        fontSize: 14,
-                        color: Colors.grey[700],
-                        fontWeight: FontWeight.w400,
+                      const SizedBox(height: 6),
+                      Text(
+                        hubName.toLowerCase(),
+                        style: TextStyle(
+                          fontSize: 14,
+                          color: Colors.grey[700],
+                          fontWeight: FontWeight.w400,
+                        ),
                       ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 16),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      'Machine',
-                      style: TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w600,
-                        color: Colors.black87,
-                      ),
-                    ),
-                    const SizedBox(height: 6),
-                    Text(
-                      '#$deviceId',
-                      style: TextStyle(
-                        fontSize: 14,
-                        color: Colors.grey[700],
-                        fontWeight: FontWeight.w400,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 16,
-                  vertical: 8,
-                ),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF4CAF50),
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                child: const Text(
-                  'Completed',
-                  style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                    color: Colors.white,
+                    ],
                   ),
                 ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              Text(
-                endTime.isNotEmpty ? _formatDateTime(endTime) : 'N/A',
-                style: TextStyle(
-                  fontSize: 13,
-                  color: Colors.grey[600],
-                  fontWeight: FontWeight.w400,
+                const SizedBox(width: 16),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'Machine',
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.black87,
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        '#$deviceId',
+                        style: TextStyle(
+                          fontSize: 14,
+                          color: Colors.grey[700],
+                          fontWeight: FontWeight.w400,
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
-              ),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  const Text(
-                    'QK WASH',
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 8,
+                  ),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF4CAF50),
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: const Text(
+                    'Completed',
                     style: TextStyle(
                       fontSize: 12,
                       fontWeight: FontWeight.w600,
-                      color: Color(0xFF4A90E2),
-                      letterSpacing: 0.5,
+                      color: Colors.white,
                     ),
                   ),
-                  const SizedBox(height: 4),
-                  Text(
-                    '₹$amount',
-                    style: const TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.w700,
-                      color: Colors.black87,
-                    ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        endTime.isNotEmpty ? _formatDateTime(endTime) : 'N/A',
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: Colors.grey[600],
+                          fontWeight: FontWeight.w400,
+                        ),
+                      ),
+                      if (hubId.isNotEmpty) ...[
+                        const SizedBox(height: 4),
+                        Row(
+                          children: [
+                            Icon(
+                              Icons.touch_app,
+                              size: 14,
+                              color: Colors.blue[700],
+                            ),
+                            const SizedBox(width: 4),
+                            Text(
+                              'Tap to view hub',
+                              style: TextStyle(
+                                fontSize: 11,
+                                color: Colors.blue[700],
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ],
                   ),
-                ],
-              ),
-            ],
-          ),
-        ],
+                ),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    const Text(
+                      'QK WASH',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: Color(0xFF4A90E2),
+                        letterSpacing: 0.5,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      '₹$amount',
+                      style: const TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w700,
+                        color: Colors.black87,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }

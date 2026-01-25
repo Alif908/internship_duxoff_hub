@@ -1,9 +1,13 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:internship_duxoff_hub/services/home_api_service.dart';
+import 'package:internship_duxoff_hub/views/home%20screen/settings%20page/wash_history.dart';
+
 import 'package:internship_duxoff_hub/views/qkwashome.dart';
 import 'package:intl/intl.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class RunningJobsPage extends StatefulWidget {
   const RunningJobsPage({super.key});
@@ -28,21 +32,18 @@ class _RunningJobsPageState extends State<RunningJobsPage> {
     super.initState();
     _fetchRunningJob();
 
-    // Refresh API data every 30 seconds
-    _apiRefreshTimer = Timer.periodic(const Duration(seconds: 30), (timer) {
+    _apiRefreshTimer = Timer.periodic(const Duration(seconds: 10), (timer) {
       if (mounted) {
         _fetchRunningJob();
       }
     });
 
-    // Update progress bar every 1 second for smooth animation
     _progressTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
       if (mounted && _hasRunningJobs) {
-        setState(() {}); // Rebuild to update progress
+        setState(() {});
       }
     });
 
-    // Check for completed jobs every 5 seconds
     _completionCheckTimer = Timer.periodic(const Duration(seconds: 5), (timer) {
       if (mounted) {
         _checkAndMoveCompletedJobs();
@@ -58,7 +59,51 @@ class _RunningJobsPageState extends State<RunningJobsPage> {
     super.dispose();
   }
 
-  /// Check if any jobs just completed and move them to recently completed
+  // Save completed job to local storage for history
+  Future<void> _saveCompletedJobToHistory(Map<String, dynamic> job) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+
+      final deviceId = (job['deviceid'] ?? '').toString();
+      final endTime = (job['device_booked_user_end_time'] ?? '').toString();
+
+      if (deviceId.isEmpty || endTime.isEmpty) {
+        debugPrint('⚠️ Cannot save job - missing deviceId or endTime');
+        return;
+      }
+
+      // Create unique key for this booking
+      final timestamp = DateTime.now().millisecondsSinceEpoch;
+      final bookingKey = 'booking_${deviceId}_$timestamp';
+
+      // Prepare booking data
+      final bookingData = {
+        'deviceid': job['deviceid'],
+        'hubname': job['hubname'],
+        'hubid': job['hubid'],
+        'machineid': '#${job['deviceid']}',
+        'amount': job['booked_user_amount'] ?? job['transactionamount'] ?? 0,
+        'endtime': job['device_booked_user_end_time'],
+        'starttime': job['device_booked_user_start_time'],
+        'washmode': job['booked_user_selected_wash_mode'] ?? 'Quick',
+        'washtime': job['booked_user_selected_duration'] ?? '15 Min',
+        'detergent':
+            job['booked_user_selected_detergent_preference'] ?? 'O3 Treat',
+        'paymentid': job['paymentid'] ?? '',
+        'timestamp': DateTime.now().toIso8601String(),
+      };
+
+      await prefs.setString(bookingKey, jsonEncode(bookingData));
+
+      debugPrint('✅ Saved completed job to history: $bookingKey');
+      debugPrint('   Device ID: $deviceId');
+      debugPrint('   Amount: ${bookingData['amount']}');
+      debugPrint('   End Time: $endTime');
+    } catch (e) {
+      debugPrint('❌ Error saving completed job to history: $e');
+    }
+  }
+
   void _checkAndMoveCompletedJobs() {
     if (_runningJobsList.isEmpty) return;
 
@@ -77,28 +122,30 @@ class _RunningJobsPageState extends State<RunningJobsPage> {
             endTime = endTime.toLocal();
           }
 
+          // Check if job is actually completed (current time is AFTER end time)
           if (now.isBefore(endTime)) {
             // Still running
             stillRunning.add(job);
           } else {
-            // Just completed
+            // Completed - current time is after end time
             justCompleted.add(job);
-            debugPrint('✅ Job completed and moved: ${job['deviceid']}');
+            debugPrint(
+              '✅ Job completed: Device ${job['deviceid']} at ${DateFormat('HH:mm').format(endTime)}',
+            );
           }
         } catch (e) {
-          stillRunning.add(job); // Keep if we can't parse
+          stillRunning.add(job);
         }
       } else {
         stillRunning.add(job);
       }
     }
 
-    // If any job completed, update the lists
+    // Process completed jobs
     if (justCompleted.isNotEmpty && mounted) {
       setState(() {
         _runningJobsList = stillRunning;
 
-        // Add to recently completed (keep only last 5 minutes)
         for (var job in justCompleted) {
           if (!_recentlyCompletedJobs.any(
             (existing) =>
@@ -106,16 +153,19 @@ class _RunningJobsPageState extends State<RunningJobsPage> {
                 existing['device_booked_user_end_time'] ==
                     job['device_booked_user_end_time'],
           )) {
-            _recentlyCompletedJobs.insert(0, job); // Add to beginning
+            _recentlyCompletedJobs.insert(0, job);
+
+            // Save to local storage for history page
+            _saveCompletedJobToHistory(job);
           }
         }
 
         _hasRunningJobs = stillRunning.isNotEmpty;
       });
 
-      debugPrint('📦 Moved ${justCompleted.length} jobs to completed');
+      debugPrint('🎉 Moved ${justCompleted.length} jobs to completed');
 
-      // Auto-remove completed jobs after 5 minutes
+      // Auto-remove from "Recently Completed" after 5 minutes
       Future.delayed(const Duration(minutes: 5), () {
         if (mounted) {
           setState(() {
@@ -128,13 +178,14 @@ class _RunningJobsPageState extends State<RunningJobsPage> {
               );
             }
           });
-          debugPrint('🗑️ Auto-removed completed jobs after 5 minutes');
+          debugPrint(
+            '🗑️ Auto-removed completed jobs from recently completed section',
+          );
         }
       });
     }
   }
 
-  /// Fetch running jobs from API
   Future<void> _fetchRunningJob() async {
     if (!mounted) return;
 
@@ -178,13 +229,19 @@ class _RunningJobsPageState extends State<RunningJobsPage> {
             endTime = endTime.toLocal();
           }
 
+          // Only include jobs that haven't finished yet
           if (now.isBefore(endTime)) {
-            // Still running - add to active jobs
             activeJobs.add(job);
+            debugPrint(
+              '📌 Active job: Device ${job['deviceid']}, ends at ${DateFormat('HH:mm').format(endTime)}',
+            );
+          } else {
+            debugPrint(
+              '⏭️ Skipping completed job: Device ${job['deviceid']} (already finished)',
+            );
           }
-          // Don't add completed jobs from API - they should move to history automatically
         } catch (e) {
-          debugPrint('⚠️ Invalid end time format: $endTimeString');
+          debugPrint('Invalid end time format: $endTimeString');
         }
       }
 
@@ -194,33 +251,50 @@ class _RunningJobsPageState extends State<RunningJobsPage> {
         _isLoading = false;
       });
 
-      debugPrint('✅ Active jobs: ${activeJobs.length}');
+      debugPrint('📊 Active jobs: ${activeJobs.length}');
     } catch (e) {
       if (!mounted) return;
 
-      String errorText = e.toString().replaceFirst('Exception: ', '');
+      // Sanitize error message - remove URLs and technical details
+      String errorText = e.toString();
+
+      // Remove Exception prefix
+      if (errorText.startsWith('Exception: ')) {
+        errorText = errorText.substring(11);
+      }
+
+      // Remove URLs, URIs, and other sensitive info
+      errorText = errorText.replaceAll(RegExp(r'https?://[^\s,)]+'), '');
+      errorText = errorText.replaceAll(RegExp(r'uri=https?://[^\s,)]+'), '');
+      errorText = errorText.replaceAll(RegExp(r'\(OS Error[^)]*\)'), '');
 
       setState(() {
         _hasRunningJobs = false;
         _runningJobsList = [];
         _isLoading = false;
 
-        if (errorText.contains('not authenticated') ||
+        // Provide user-friendly error messages
+        if (errorText.contains('ClientException') ||
+            errorText.contains('SocketException') ||
+            errorText.contains('Failed host lookup') ||
+            errorText.contains('No address associated') ||
+            errorText.contains('errno = 7')) {
+          _errorMessage =
+              'Unable to connect. Please check your internet connection.';
+        } else if (errorText.contains('not authenticated') ||
             errorText.contains('Session token') ||
             errorText.contains('Session expired')) {
           _errorMessage = 'Session expired. Please login again.';
         } else if (errorText.contains('401')) {
           _errorMessage = 'Authentication failed. Please login again.';
-        } else if (errorText.contains('internet') ||
-            errorText.contains('network')) {
-          _errorMessage = 'No internet connection.';
-        } else if (errorText.contains('timed out')) {
-          _errorMessage = 'Request timed out. Try again.';
+        } else if (errorText.toLowerCase().contains('timeout')) {
+          _errorMessage = 'Connection timeout. Please try again.';
         } else {
-          _errorMessage = 'Failed to load running jobs.';
+          _errorMessage = 'Unable to load running jobs. Please try again.';
         }
       });
 
+      // Log full error for debugging (won't be shown to users)
       debugPrint('❌ Error fetching running job: $e');
     }
   }
@@ -282,6 +356,14 @@ class _RunningJobsPageState extends State<RunningJobsPage> {
     } catch (e) {
       return 0.0;
     }
+  }
+
+  // Navigate to History Page
+  void _navigateToHistory() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (context) => const WashHistoryPage()),
+    );
   }
 
   @override
@@ -361,7 +443,7 @@ class _RunningJobsPageState extends State<RunningJobsPage> {
                 ),
               ],
 
-              // Recently Completed Section (will disappear after 5 minutes)
+              // Recently Completed Section
               if (_recentlyCompletedJobs.isNotEmpty) ...[
                 Padding(
                   padding: EdgeInsets.only(
@@ -510,36 +592,61 @@ class _RunningJobsPageState extends State<RunningJobsPage> {
       endTimeString: endTimeString,
     );
 
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        border: isActive
-            ? null
-            : Border.all(color: Colors.green.withOpacity(0.3)),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.05),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Top Row: Hub Name and Machine Name
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+    return GestureDetector(
+      onTap: !isActive ? _navigateToHistory : null,
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(12),
+          border: isActive
+              ? null
+              : Border.all(color: Colors.green.withOpacity(0.3)),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.05),
+              blurRadius: 8,
+              offset: const Offset(0, 2),
+            ),
+          ],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Top Row - Hub and Machine Info
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Hub Name',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w500,
+                          color: Colors.grey[600],
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        hubName.toLowerCase(),
+                        style: const TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.black87,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
                   children: [
                     Text(
-                      'Hub Name',
+                      'Machine Name',
                       style: TextStyle(
                         fontSize: 12,
                         fontWeight: FontWeight.w500,
@@ -548,7 +655,7 @@ class _RunningJobsPageState extends State<RunningJobsPage> {
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      hubName.toLowerCase(),
+                      machineId,
                       style: const TextStyle(
                         fontSize: 14,
                         fontWeight: FontWeight.w600,
@@ -557,124 +664,102 @@ class _RunningJobsPageState extends State<RunningJobsPage> {
                     ),
                   ],
                 ),
-              ),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  Text(
-                    'Machine Name',
-                    style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w500,
-                      color: Colors.grey[600],
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    machineId,
-                    style: const TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w600,
-                      color: Colors.black87,
-                    ),
-                  ),
-                ],
-              ),
-            ],
-          ),
+              ],
+            ),
 
-          const SizedBox(height: 16),
+            const SizedBox(height: 16),
 
-          // Bottom Row: Status/Progress and End Time
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+            // Bottom Row - Status and End Time
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Status',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w500,
+                          color: Colors.grey[600],
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      if (isActive) ...[
+                        Text(
+                          'Running (${(progress * 100).toInt()}% completed)',
+                          style: const TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                            color: Color(0xFF4A90E2),
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(4),
+                          child: LinearProgressIndicator(
+                            value: progress,
+                            backgroundColor: const Color(0xFFE8E8E8),
+                            valueColor: const AlwaysStoppedAnimation<Color>(
+                              Color(0xFF4A90E2),
+                            ),
+                            minHeight: 6,
+                          ),
+                        ),
+                      ] else ...[
+                        Row(
+                          children: [
+                            Icon(
+                              Icons.check_circle,
+                              size: 16,
+                              color: Colors.green[600],
+                            ),
+                            const SizedBox(width: 6),
+                            const Text(
+                              'Completed',
+                              style: TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w600,
+                                color: Colors.green,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+
+                const SizedBox(width: 24),
+
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
                   children: [
                     Text(
-                      'Status',
+                      'End time',
                       style: TextStyle(
                         fontSize: 12,
                         fontWeight: FontWeight.w500,
                         color: Colors.grey[600],
                       ),
                     ),
-                    const SizedBox(height: 6),
-                    if (isActive) ...[
-                      Text(
-                        'Running (${(progress * 100).toInt()}% completed)',
-                        style: const TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w600,
-                          color: Color(0xFF4A90E2),
-                        ),
+                    const SizedBox(height: 4),
+                    Text(
+                      endTime,
+                      style: const TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.black87,
                       ),
-                      const SizedBox(height: 8),
-                      ClipRRect(
-                        borderRadius: BorderRadius.circular(4),
-                        child: LinearProgressIndicator(
-                          value: progress,
-                          backgroundColor: const Color(0xFFE8E8E8),
-                          valueColor: const AlwaysStoppedAnimation<Color>(
-                            Color(0xFF4A90E2),
-                          ),
-                          minHeight: 6,
-                        ),
-                      ),
-                    ] else ...[
-                      Row(
-                        children: [
-                          Icon(
-                            Icons.check_circle,
-                            size: 16,
-                            color: Colors.green[600],
-                          ),
-                          const SizedBox(width: 6),
-                          const Text(
-                            'Completed',
-                            style: TextStyle(
-                              fontSize: 13,
-                              fontWeight: FontWeight.w600,
-                              color: Colors.green,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
+                    ),
                   ],
                 ),
-              ),
-
-              const SizedBox(width: 24),
-
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  Text(
-                    'End time',
-                    style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w500,
-                      color: Colors.grey[600],
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    endTime,
-                    style: const TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w600,
-                      color: Colors.black87,
-                    ),
-                  ),
-                ],
-              ),
-            ],
-          ),
-        ],
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -714,25 +799,6 @@ class _RunningJobsPageState extends State<RunningJobsPage> {
             'Scan QR code to start a wash',
             style: TextStyle(fontSize: 14, color: Colors.grey[500]),
           ),
-          // const SizedBox(height: 16),
-          // Container(
-          //   padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-          //   decoration: BoxDecoration(
-          //     color: Colors.blue[50],
-          //     borderRadius: BorderRadius.circular(8),
-          //   ),
-          //   // child: Row(
-          //   //   mainAxisSize: MainAxisSize.min,
-          //   //   children: [
-          //   //     Icon(Icons.info_outline, size: 16, color: Colors.blue[700]),
-          //   //     const SizedBox(width: 8),
-          //   //     Text(
-          //   //       'Completed washes appear in History',
-          //   //       style: TextStyle(fontSize: 12, color: Colors.blue[700]),
-          //   //     ),
-          //   //   ],
-          //   // ),
-          // ),
         ],
       ),
     );

@@ -29,7 +29,7 @@ class _LoginPageState extends State<LoginPage> {
     _checkExistingUser();
   }
 
-  /// ✅ Check if user data exists and auto-fill
+  
   Future<void> _checkExistingUser() async {
     try {
       final prefs = await SharedPreferences.getInstance();
@@ -45,11 +45,11 @@ class _LoginPageState extends State<LoginPage> {
         _mobileController.text = savedMobile;
       }
     } catch (e) {
-      debugPrint('❌ Error loading saved user data: $e');
+      debugPrint('Error loading saved user data: $e');
     }
   }
 
-  /// ✅ Improved validation
+  
   String? _validateName(String? value) {
     if (value == null || value.trim().isEmpty) {
       return 'Please enter your name';
@@ -77,10 +77,10 @@ class _LoginPageState extends State<LoginPage> {
   }
 
   Future<void> _handleContinue() async {
-    // ✅ Dismiss keyboard
+    
     FocusScope.of(context).unfocus();
 
-    // ✅ Validate inputs
+    
     final nameError = _validateName(_nameController.text);
     final mobileError = _validateMobile(_mobileController.text);
 
@@ -104,7 +104,7 @@ class _LoginPageState extends State<LoginPage> {
       debugPrint('Mobile: $mobile');
       debugPrint('Name: $name');
 
-      // ✅ Call send OTP API
+      
       final response = await AuthApi.sendOtp(mobile);
 
       debugPrint('API Response: $response');
@@ -116,30 +116,30 @@ class _LoginPageState extends State<LoginPage> {
       final String otpFromApi = response['otp'].toString();
       final String userType = response['user_type']?.toString() ?? 'New';
 
-      debugPrint('✅ OTP Received: $otpFromApi');
+      debugPrint('OTP Received: $otpFromApi');
       debugPrint('User Type: $userType');
 
-      // ✅ Save user data + OTP in SharedPreferences
+      
       final prefs = await SharedPreferences.getInstance();
 
-      // Save with both key variations for compatibility
+      
       await prefs.setString('user_name', name);
       await prefs.setString('username', name);
       await prefs.setString('user_mobile', mobile);
       await prefs.setString('usermobile', mobile);
 
-      // Store OTP with timestamp for expiration checking
+      
       await prefs.setString('current_otp', otpFromApi);
       await prefs.setString('otp_timestamp', DateTime.now().toIso8601String());
 
-      debugPrint('✅ User data saved to SharedPreferences');
+      debugPrint('User data saved to SharedPreferences');
       debugPrint('=================================');
 
       setState(() => _isLoading = false);
 
       _showSnackBar('OTP sent successfully!', isError: false);
 
-      // ✅ Navigate to OTP page
+      
       if (mounted) {
         await Navigator.push(
           context,
@@ -156,7 +156,7 @@ class _LoginPageState extends State<LoginPage> {
     } catch (e) {
       setState(() => _isLoading = false);
 
-      debugPrint('❌ Error in _handleContinue: $e');
+      debugPrint('Error in _handleContinue: $e');
 
       String errorMessage = 'Failed to send OTP. Please try again.';
 
@@ -219,7 +219,7 @@ class _LoginPageState extends State<LoginPage> {
                 children: [
                   const SizedBox(height: 20),
 
-                  // Top Logo Text
+                  
                   Align(
                     alignment: Alignment.topLeft,
                     child: RichText(
@@ -250,7 +250,7 @@ class _LoginPageState extends State<LoginPage> {
 
                   const SizedBox(height: 40),
 
-                  // Main Illustration Image
+                 
                   Image.asset(
                     'assets/images/6190576 1.png',
                     height: 280,
@@ -270,7 +270,7 @@ class _LoginPageState extends State<LoginPage> {
 
                   const SizedBox(height: 30),
 
-                  // Title
+                  
                   const Text(
                     'Scan : Pay : Wash : Move',
                     style: TextStyle(
@@ -283,7 +283,7 @@ class _LoginPageState extends State<LoginPage> {
 
                   const SizedBox(height: 35),
 
-                  // Name Input
+                  
                   SizedBox(
                     width: 220,
                     child: Container(
@@ -320,7 +320,7 @@ class _LoginPageState extends State<LoginPage> {
 
                   const SizedBox(height: 16),
 
-                  // Mobile Number Input
+                  
                   SizedBox(
                     width: 220,
                     child: Container(
@@ -360,7 +360,7 @@ class _LoginPageState extends State<LoginPage> {
 
                   const SizedBox(height: 25),
 
-                  // Continue Button
+                  
                   SizedBox(
                     width: 140,
                     height: 48,
@@ -400,7 +400,7 @@ class _LoginPageState extends State<LoginPage> {
 
                   const SizedBox(height: 40),
 
-                  // Terms and Privacy
+                  
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 10),
                     child: RichText(

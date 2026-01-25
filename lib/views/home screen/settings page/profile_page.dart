@@ -19,7 +19,6 @@ class _ProfilePageState extends State<ProfilePage> {
   bool _isLoading = true;
   bool _isDeletingAccount = false;
 
-  // User data from API
   Map<String, dynamic> userData = {
     'userId': '',
     'name': '',
@@ -36,12 +35,10 @@ class _ProfilePageState extends State<ProfilePage> {
     _loadProfileImage();
   }
 
-  /// Fetch user profile from API using HomeApi service
   Future<void> _fetchUserProfile() async {
     setState(() => _isLoading = true);
 
     try {
-      // Check if user is authenticated
       final prefs = await SharedPreferences.getInstance();
       final mobile = prefs.getString('user_mobile');
       final sessionToken = prefs.getString('session_token');
@@ -55,7 +52,6 @@ class _ProfilePageState extends State<ProfilePage> {
         return;
       }
 
-      // Call API using HomeApi service
       final data = await HomeApi.getUserProfile();
 
       setState(() {
@@ -70,7 +66,6 @@ class _ProfilePageState extends State<ProfilePage> {
         _isLoading = false;
       });
 
-      // Update stored username if changed
       if (data['username'] != null) {
         await prefs.setString('user_name', data['username']);
       }
@@ -93,7 +88,6 @@ class _ProfilePageState extends State<ProfilePage> {
     }
   }
 
-  /// Load profile image from SharedPreferences
   Future<void> _loadProfileImage() async {
     try {
       final prefs = await SharedPreferences.getInstance();
@@ -106,7 +100,6 @@ class _ProfilePageState extends State<ProfilePage> {
             _profileImage = file;
           });
         } else {
-          // Image file doesn't exist, clear the stored path
           await prefs.remove('profile_image_path');
         }
       }
@@ -115,7 +108,6 @@ class _ProfilePageState extends State<ProfilePage> {
     }
   }
 
-  /// Save profile image path to SharedPreferences
   Future<void> _saveProfileImagePath(String path) async {
     try {
       final prefs = await SharedPreferences.getInstance();
@@ -227,7 +219,6 @@ class _ProfilePageState extends State<ProfilePage> {
           _profileImage = File(pickedFile.path);
         });
 
-        // Save image path to SharedPreferences
         await _saveProfileImagePath(pickedFile.path);
 
         _showSnackBar('Profile picture updated', isError: false);
@@ -243,7 +234,6 @@ class _ProfilePageState extends State<ProfilePage> {
       _profileImage = null;
     });
 
-    // Remove from SharedPreferences
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove('profile_image_path');
 
@@ -340,13 +330,8 @@ class _ProfilePageState extends State<ProfilePage> {
     try {
       final prefs = await SharedPreferences.getInstance();
 
-      // TODO: When delete account API is available, call it here:
-      // await HomeApi.deleteAccount();
-
-      // For now, just clear local data
       await prefs.clear();
 
-      // Delete profile image file if exists
       if (_profileImage != null) {
         try {
           await _profileImage!.delete();
@@ -450,7 +435,6 @@ class _ProfilePageState extends State<ProfilePage> {
                     children: [
                       const SizedBox(height: 40),
 
-                      // Profile Image
                       GestureDetector(
                         onTap: _showImageSourceDialog,
                         child: Container(
@@ -481,7 +465,6 @@ class _ProfilePageState extends State<ProfilePage> {
 
                       const SizedBox(height: 50),
 
-                      // Profile Information Card
                       Container(
                         decoration: BoxDecoration(
                           color: Colors.white,
@@ -521,7 +504,6 @@ class _ProfilePageState extends State<ProfilePage> {
 
                       const SizedBox(height: 30),
 
-                      // Delete Account Button
                       SizedBox(
                         width: double.infinity,
                         height: 50,

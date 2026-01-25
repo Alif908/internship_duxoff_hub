@@ -33,7 +33,6 @@ class _SettingsPageState extends State<SettingsPage> {
     _loadUserData();
   }
 
-  //phone call
   Future<void> makeCall() async {
     if (!Platform.isAndroid && !Platform.isIOS) return;
 
@@ -41,20 +40,17 @@ class _SettingsPageState extends State<SettingsPage> {
     await launchUrl(uri, mode: LaunchMode.externalApplication);
   }
 
-  /// Load user data from SharedPreferences and API
   Future<void> _loadUserData() async {
     setState(() => _isLoading = true);
 
     try {
       final prefs = await SharedPreferences.getInstance();
 
-      // Get basic info from SharedPreferences first
       _userName = prefs.getString('user_name') ?? '';
       _userMobile = prefs.getString('user_mobile') ?? '';
 
       setState(() {});
 
-      // Then fetch fresh data from API
       try {
         final profileData = await HomeApi.getUserProfile();
 
@@ -67,12 +63,10 @@ class _SettingsPageState extends State<SettingsPage> {
           _totalDryings = profileData['numberofDryers'] ?? 0;
         });
 
-        // Update stored username if changed
         if (profileData['username'] != null) {
           await prefs.setString('user_name', profileData['username']);
         }
       } catch (e) {
-        // If API fails, use cached data from SharedPreferences
         debugPrint('Failed to fetch profile from API: $e');
       }
 
@@ -83,7 +77,6 @@ class _SettingsPageState extends State<SettingsPage> {
     }
   }
 
-  /// Show logout confirmation dialog
   void _showLogoutDialog() {
     showDialog(
       context: context,
@@ -94,8 +87,6 @@ class _SettingsPageState extends State<SettingsPage> {
           ),
           title: const Row(
             children: [
-              Icon(Icons.logout, color: Color(0xFF4DB6AC), size: 28),
-              SizedBox(width: 12),
               Text(
                 'Logout',
                 style: TextStyle(fontWeight: FontWeight.w600, fontSize: 18),
@@ -134,21 +125,24 @@ class _SettingsPageState extends State<SettingsPage> {
     );
   }
 
-  /// Handle logout
   Future<void> _handleLogout() async {
     setState(() => _isLoggingOut = true);
 
     try {
       final prefs = await SharedPreferences.getInstance();
 
-      // Clear session data but keep user_name and user_mobile for quick login
+      // Clear all session-related data
       await prefs.remove('session_token');
+      await prefs.remove('sessionToken');
       await prefs.remove('user_status');
       await prefs.remove('current_otp');
       await prefs.remove('otp_timestamp');
-
-      // Optional: Clear everything for complete logout
-      // await prefs.clear();
+      await prefs.remove('user_mobile');
+      await prefs.remove('usermobile');
+      await prefs.remove('user_name');
+      await prefs.remove('username');
+      await prefs.remove('user_id');
+      await prefs.remove('userid');
 
       setState(() => _isLoggingOut = false);
 
@@ -271,11 +265,18 @@ class _SettingsPageState extends State<SettingsPage> {
                     );
                   },
                 ),
+                _divider(),
+                // ✅ LOGOUT BUTTON ADDED HERE
+                _settingsTile(
+                  title: 'Logout',
+                  onTap: _isLoggingOut ? () {} : _showLogoutDialog,
+                  isLogout: true,
+                  isLoading: _isLoggingOut,
+                ),
               ],
             ),
           ),
 
-          /// Bottom enquiry bar
           Container(
             height: 52,
             width: double.infinity,
@@ -300,7 +301,12 @@ class _SettingsPageState extends State<SettingsPage> {
     );
   }
 
-  Widget _settingsTile({required String title, required VoidCallback onTap}) {
+  Widget _settingsTile({
+    required String title,
+    required VoidCallback onTap,
+    bool isLogout = false,
+    bool isLoading = false,
+  }) {
     return InkWell(
       onTap: onTap,
       child: Padding(
@@ -309,14 +315,27 @@ class _SettingsPageState extends State<SettingsPage> {
           children: [
             Text(
               title,
-              style: const TextStyle(
+              style: TextStyle(
                 fontSize: 16,
                 fontWeight: FontWeight.w400,
-                color: Colors.black,
+                color: isLogout
+                    ? (isLoading ? Colors.grey : Colors.red)
+                    : Colors.black,
               ),
             ),
             const Spacer(),
-            const Icon(Icons.chevron_right, size: 22, color: Colors.black38),
+            // Show loading indicator when logging out
+            if (isLoading)
+              const SizedBox(
+                width: 18,
+                height: 18,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF4DB6AC)),
+                ),
+              )
+            else
+              const Icon(Icons.chevron_right, size: 22, color: Colors.black38),
           ],
         ),
       ),
