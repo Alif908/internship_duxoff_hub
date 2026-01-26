@@ -35,11 +35,10 @@ class _HomePageState extends State<HomePage> {
     _fetchHistory();
 
     _apiRefreshTimer = Timer.periodic(const Duration(seconds: 10), (timer) {
-  if (mounted) {
-    _fetchRunningJob();
-  }
-});
-
+      if (mounted) {
+        _fetchRunningJob();
+      }
+    });
 
     _progressTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
       if (mounted && _hasRunningJob) {
@@ -55,7 +54,30 @@ class _HomePageState extends State<HomePage> {
     super.dispose();
   }
 
-  double _calculateProgress({
+  // Get progress from device status or calculate from time
+  double _getProgress(Map<String, dynamic> job) {
+    // First priority: use devicestatus from API
+    final String? deviceStatus = job['devicestatus']?.toString();
+    if (deviceStatus != null && deviceStatus.isNotEmpty) {
+      try {
+        final int status = int.parse(deviceStatus);
+        final double progress = status / 100.0;
+        debugPrint('[HomePage] Using API devicestatus: $deviceStatus%');
+        return progress.clamp(0.0, 1.0);
+      } catch (e) {
+        debugPrint('⚠️ [HomePage] Invalid devicestatus format: $deviceStatus');
+      }
+    }
+
+    // Fallback: calculate from time
+    debugPrint('[HomePage] devicestatus not available, using time calculation');
+    return _calculateProgressFromTime(
+      startTimeString: job['device_booked_user_start_time']?.toString(),
+      endTimeString: job['device_booked_user_end_time']?.toString(),
+    );
+  }
+
+  double _calculateProgressFromTime({
     required String? startTimeString,
     required String? endTimeString,
   }) {
@@ -112,7 +134,9 @@ class _HomePageState extends State<HomePage> {
         double progress = elapsedSeconds / totalSeconds;
         int progressPercent = (progress * 100).toInt();
 
-        debugPrint('🔄 [HomePage] Progress: $progressPercent% completed');
+        debugPrint(
+          '🔄 [HomePage] Progress: $progressPercent% completed (from time)',
+        );
 
         return progress.clamp(0.0, 1.0);
       } else {
@@ -184,6 +208,15 @@ class _HomePageState extends State<HomePage> {
       final List<dynamic> activeJobs = jobs.where((job) {
         if (job == null || job is! Map) return false;
 
+        // Check device status - if it's "100", skip it (completed)
+        final String? deviceStatus = job['devicestatus']?.toString();
+        if (deviceStatus == "100") {
+          debugPrint(
+            '⏭️ [HomePage] Skipping job with devicestatus=100: Device ${job['deviceid']}',
+          );
+          return false;
+        }
+
         final String? endTimeString = job['device_booked_user_end_time']
             ?.toString();
 
@@ -193,7 +226,15 @@ class _HomePageState extends State<HomePage> {
 
         try {
           final DateTime endTime = DateTime.parse(endTimeString).toLocal();
-          return now.isBefore(endTime);
+          final isActive = now.isBefore(endTime);
+
+          if (isActive) {
+            debugPrint(
+              '📌 [HomePage] Active job: Device ${job['deviceid']}, status: $deviceStatus%, ends at ${DateFormat('HH:mm').format(endTime)}',
+            );
+          }
+
+          return isActive;
         } catch (e) {
           debugPrint('⚠️ [HomePage] Invalid end time format: $endTimeString');
           return false;
@@ -208,7 +249,7 @@ class _HomePageState extends State<HomePage> {
         });
 
         debugPrint(
-          '[HomePage] Running job loaded: ${activeJobs.length} active',
+          '✅ [HomePage] Running job loaded: ${activeJobs.length} active',
         );
       } else {
         setState(() {
@@ -709,6 +750,7 @@ class _HomePageState extends State<HomePage> {
     final hubName = _runningJob!['hubname']?.toString() ?? 'Unknown Hub';
     final deviceId = _runningJob!['deviceid']?.toString() ?? 'N/A';
     final machineId = '#$deviceId';
+    final deviceStatus = _runningJob!['devicestatus']?.toString() ?? '0';
 
     String endTime = '--:--';
     String endTimeString =
@@ -716,19 +758,16 @@ class _HomePageState extends State<HomePage> {
     if (endTimeString.isNotEmpty) {
       try {
         final DateTime endTimeDate = DateTime.parse(endTimeString).toLocal();
-        endTime = DateFormat('HH:mm').format(endTimeDate);
+        endTime = DateFormat('hh:mm a').format(endTimeDate);
       } catch (e) {
         endTime = '--:--';
         debugPrint('⚠️ [HomePage] Error parsing end time: $e');
       }
     }
 
-    double progress = _calculateProgress(
-      startTimeString: _runningJob!['device_booked_user_start_time'],
-      endTimeString: _runningJob!['device_booked_user_end_time'],
-    );
+    double progress = _getProgress(_runningJob!);
 
-    String statusText = 'Running ( ${(progress * 100).toInt()}% completed )';
+    String statusText = 'Running ( $deviceStatus% completed )';
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),

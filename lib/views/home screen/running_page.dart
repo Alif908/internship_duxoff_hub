@@ -112,6 +112,18 @@ class _RunningJobsPageState extends State<RunningJobsPage> {
     final List<dynamic> justCompleted = [];
 
     for (var job in _runningJobsList) {
+      // Check device status first - if it's "100", job is complete
+      final String? deviceStatus = job['devicestatus']?.toString();
+
+      if (deviceStatus == "100") {
+        justCompleted.add(job);
+        debugPrint(
+          '✅ Job completed (devicestatus=100): Device ${job['deviceid']}',
+        );
+        continue;
+      }
+
+      // Also check end time
       final String? endTimeString = job['device_booked_user_end_time']
           ?.toString();
 
@@ -130,7 +142,7 @@ class _RunningJobsPageState extends State<RunningJobsPage> {
             // Completed - current time is after end time
             justCompleted.add(job);
             debugPrint(
-              '✅ Job completed: Device ${job['deviceid']} at ${DateFormat('HH:mm').format(endTime)}',
+              '✅ Job completed (time): Device ${job['deviceid']} at ${DateFormat('HH:mm').format(endTime)}',
             );
           }
         } catch (e) {
@@ -219,30 +231,85 @@ class _RunningJobsPageState extends State<RunningJobsPage> {
       for (var job in jobs) {
         if (job == null || job is! Map) continue;
 
-        final String? endTimeString = job['device_booked_user_end_time']
-            ?.toString();
-        if (endTimeString == null || endTimeString.isEmpty) continue;
+        final deviceId = job['deviceid']?.toString() ?? 'N/A';
+        final deviceStatus = job['devicestatus']?.toString() ?? '';
+        final endTimeString = job['device_booked_user_end_time']?.toString();
 
-        try {
-          DateTime endTime = DateTime.parse(endTimeString);
-          if (endTime.isUtc || endTimeString.endsWith('Z')) {
-            endTime = endTime.toLocal();
-          }
+        debugPrint('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+        debugPrint('🔍 RAW JOB DATA for Device $deviceId:');
+        debugPrint(
+          '   devicestatus from API: "${deviceStatus.isEmpty ? 'MISSING/NULL' : deviceStatus}"',
+        );
+        debugPrint(
+          '   devicestatus type: ${deviceStatus.isEmpty ? 'empty' : job['devicestatus'].runtimeType}',
+        );
+        debugPrint('   End time: $endTimeString');
+        debugPrint('   ALL FIELDS:');
 
-          // Only include jobs that haven't finished yet
-          if (now.isBefore(endTime)) {
-            activeJobs.add(job);
-            debugPrint(
-              '📌 Active job: Device ${job['deviceid']}, ends at ${DateFormat('HH:mm').format(endTime)}',
-            );
+        job.forEach((key, value) {
+          if (key.toLowerCase().contains('status') ||
+              key.toLowerCase().contains('progress') ||
+              key.toLowerCase().contains('percent')) {
+            debugPrint('   ⭐ $key: $value (${value.runtimeType})');
           } else {
+            debugPrint('      $key: $value');
+          }
+        });
+
+        // ✅ CHECK 1: Skip if devicestatus is explicitly "100" (completed)
+        if (deviceStatus == "100") {
+          debugPrint('   ⏭️ SKIPPED: Job completed (devicestatus=100)');
+          debugPrint('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+          continue;
+        }
+
+        // ✅ CHECK 2: Verify end time hasn't passed
+        bool isStillRunning = false;
+
+        if (endTimeString != null && endTimeString.isNotEmpty) {
+          try {
+            DateTime endTime = DateTime.parse(endTimeString);
+            if (endTime.isUtc || endTimeString.endsWith('Z')) {
+              endTime = endTime.toLocal();
+            }
+
+            if (now.isBefore(endTime)) {
+              isStillRunning = true;
+              debugPrint(
+                '   ✅ ACTIVE: End time is in future (${DateFormat('HH:mm').format(endTime)})',
+              );
+            } else {
+              debugPrint(
+                '   ⏭️ SKIPPED: End time passed (${DateFormat('HH:mm').format(endTime)})',
+              );
+            }
+          } catch (e) {
+            debugPrint('   ⚠️ Error parsing end time: $e');
+            // If we can't parse end time but devicestatus isn't 100, assume it's running
+            if (deviceStatus != "100") {
+              isStillRunning = true;
+              debugPrint(
+                '   ⚠️ Assuming active (end time parse failed but not completed)',
+              );
+            }
+          }
+        } else {
+          // No end time but devicestatus isn't 100 - assume newly booked and running
+          if (deviceStatus != "100") {
+            isStillRunning = true;
             debugPrint(
-              '⏭️ Skipping completed job: Device ${job['deviceid']} (already finished)',
+              '   ⚠️ No end time but devicestatus != 100, assuming active',
             );
           }
-        } catch (e) {
-          debugPrint('Invalid end time format: $endTimeString');
         }
+
+        // ✅ ADD TO ACTIVE JOBS
+        if (isStillRunning) {
+          activeJobs.add(job);
+          debugPrint('   ✅✅ ADDED TO ACTIVE JOBS LIST ✅✅');
+        }
+
+        debugPrint('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
       }
 
       setState(() {
@@ -251,7 +318,11 @@ class _RunningJobsPageState extends State<RunningJobsPage> {
         _isLoading = false;
       });
 
-      debugPrint('📊 Active jobs: ${activeJobs.length}');
+      debugPrint('');
+      debugPrint('📊 ========== SUMMARY ==========');
+      debugPrint('📊 Total jobs from API: ${jobs.length}');
+      debugPrint('📊 Active jobs after filtering: ${activeJobs.length}');
+      debugPrint('📊 ================================');
     } catch (e) {
       if (!mounted) return;
 
@@ -303,7 +374,36 @@ class _RunningJobsPageState extends State<RunningJobsPage> {
     await _fetchRunningJob();
   }
 
-  double _calculateProgress({
+  // Get progress from device status or calculate from time
+  double _getProgress(Map<String, dynamic> job) {
+    // First priority: use devicestatus from API
+    final String? deviceStatus = job['devicestatus']?.toString();
+
+    if (deviceStatus != null &&
+        deviceStatus.isNotEmpty &&
+        deviceStatus != 'null') {
+      try {
+        final int status = int.parse(deviceStatus);
+        final double progress = status / 100.0;
+        return progress.clamp(0.0, 1.0);
+      } catch (e) {
+        debugPrint('⚠️ Invalid devicestatus format: $deviceStatus');
+      }
+    }
+
+    // ✅ Fallback: If devicestatus is missing/empty (newly booked job)
+    // Show minimal progress to indicate job is starting
+    debugPrint(
+      '⚠️ devicestatus missing for device ${job['deviceid']}, using time calculation',
+    );
+
+    return _calculateProgressFromTime(
+      startTimeString: job['device_booked_user_start_time']?.toString(),
+      endTimeString: job['device_booked_user_end_time']?.toString(),
+    );
+  }
+
+  double _calculateProgressFromTime({
     required String? startTimeString,
     required String? endTimeString,
   }) {
@@ -573,6 +673,7 @@ class _RunningJobsPageState extends State<RunningJobsPage> {
     final hubName = job['hubname']?.toString() ?? 'Unknown Hub';
     final deviceId = job['deviceid']?.toString() ?? 'N/A';
     final machineId = '#$deviceId';
+    final deviceStatus = job['devicestatus']?.toString() ?? '';
 
     final startTimeString = job['device_booked_user_start_time']?.toString();
     final endTimeString = job['device_booked_user_end_time']?.toString();
@@ -581,16 +682,13 @@ class _RunningJobsPageState extends State<RunningJobsPage> {
     if (endTimeString != null && endTimeString.isNotEmpty) {
       try {
         final DateTime endTimeDate = DateTime.parse(endTimeString).toLocal();
-        endTime = DateFormat('HH:mm').format(endTimeDate);
+        endTime = DateFormat('hh:mm a').format(endTimeDate);
       } catch (e) {
         endTime = '--:--';
       }
     }
 
-    double progress = _calculateProgress(
-      startTimeString: startTimeString,
-      endTimeString: endTimeString,
-    );
+    double progress = _getProgress(job);
 
     return GestureDetector(
       onTap: !isActive ? _navigateToHistory : null,
@@ -689,7 +787,9 @@ class _RunningJobsPageState extends State<RunningJobsPage> {
                       const SizedBox(height: 6),
                       if (isActive) ...[
                         Text(
-                          'Running (${(progress * 100).toInt()}% completed)',
+                          deviceStatus.isNotEmpty
+                              ? 'Running ($deviceStatus% completed)'
+                              : 'Running (starting...)',
                           style: const TextStyle(
                             fontSize: 13,
                             fontWeight: FontWeight.w600,
