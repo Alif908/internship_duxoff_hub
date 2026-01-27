@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:internship_duxoff_hub/services/home_api_service.dart';
 import 'package:internship_duxoff_hub/views/home%20screen/qrscanning/payment_detail_page.dart';
 import 'package:intl/intl.dart';
 
@@ -20,8 +21,102 @@ class MachineListPage extends StatefulWidget {
 
 class _MachineListPageState extends State<MachineListPage> {
   String selectedWashMode = '';
-  int washTimeMinutes = 0; // Start with 0
+  int washTimeMinutes = 0;
   bool detergentPreferenceEnabled = true;
+
+  // Real-time device status tracking
+  List<dynamic> _devices = [];
+  bool _isRefreshing = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _devices = List.from(widget.devices);
+    // Immediately refresh device statuses on page load
+    _refreshDeviceStatuses();
+  }
+
+  /// Refresh device statuses from running jobs API
+  Future<void> _refreshDeviceStatuses() async {
+    if (_isRefreshing) return;
+
+    setState(() {
+      _isRefreshing = true;
+    });
+
+    try {
+      debugPrint(' Refreshing device statuses for hub ${widget.hubId}...');
+
+      // Get fresh running jobs data
+      final runningJobs = await HomeApi.getRunningJobs(forceRefresh: true);
+
+      debugPrint(' Found ${runningJobs.length} running jobs');
+
+      // Update device statuses based on running jobs
+      for (var device in _devices) {
+        final deviceId = device['deviceid']?.toString() ?? '';
+
+        // Store original status for comparison
+        final oldStatus = device['devicestatus']?.toString() ?? '0';
+        final oldEndTime = device['device_booked_user_end_time'];
+
+        // Find if this device has a running job
+        final runningJob = runningJobs.firstWhere(
+          (job) => job['deviceid']?.toString() == deviceId,
+          orElse: () => null,
+        );
+
+        if (runningJob != null) {
+          // Device has an active job - update with running job data
+          final newStatus = runningJob['devicestatus']?.toString() ?? '0';
+          final newEndTime = runningJob['device_booked_user_end_time'];
+
+          device['devicestatus'] = newStatus;
+          device['device_booked_user_end_time'] = newEndTime;
+
+          // Check if device just completed
+          if (newStatus == "100") {
+            debugPrint(
+              ' Device $deviceId completed (status=100), marking as available',
+            );
+            device['devicestatus'] = '0';
+            device['device_booked_user_end_time'] = null;
+          } else {
+            debugPrint(
+              ' Updated Device $deviceId: status=$newStatus, endTime=$newEndTime',
+            );
+          }
+        } else {
+          // No running job found for this device
+          if (oldStatus != '0' && oldStatus != 'ready') {
+            // Device was in use but job not found - mark as available
+            device['devicestatus'] = '0';
+            device['device_booked_user_end_time'] = null;
+            debugPrint(
+              ' Device $deviceId job completed/not found, marked as available',
+            );
+          } else {
+            debugPrint('ℹ️ Device $deviceId already available');
+          }
+        }
+      }
+
+      if (mounted) {
+        setState(() {
+          _isRefreshing = false;
+        });
+      }
+
+      debugPrint(' Device status refresh completed');
+    } catch (e) {
+      debugPrint(' Error refreshing device statuses: $e');
+      if (mounted) {
+        setState(() {
+          _isRefreshing = false;
+        });
+      }
+    }
+  }
 
   String _formatEndTime(String? endTimeStr) {
     if (endTimeStr == null || endTimeStr.isEmpty) return '10:15 pm';
@@ -30,11 +125,11 @@ class _MachineListPageState extends State<MachineListPage> {
       final DateTime endTime = DateTime.parse(endTimeStr).toLocal();
       return DateFormat('h:mm a').format(endTime).toLowerCase();
     } catch (e) {
+      debugPrint(' Error formatting end time: $e');
       return '10:15 pm';
     }
   }
 
-  // Calculate end time based on current time + wash duration
   String _calculateEndTime(int minutes) {
     final now = DateTime.now();
     final endTime = now.add(Duration(minutes: minutes));
@@ -44,7 +139,6 @@ class _MachineListPageState extends State<MachineListPage> {
   double _calculateTotalPrice() {
     double offerPrice = 0.0;
 
-    // Wash mode pricing (offer price)
     if (selectedWashMode == 'Quick Wash') {
       offerPrice = 1.0;
     } else if (selectedWashMode == 'Normal Wash') {
@@ -101,13 +195,16 @@ class _MachineListPageState extends State<MachineListPage> {
                 ],
               ),
             )
-          : ListView.builder(
-              padding: const EdgeInsets.all(20),
-              itemCount: widget.devices.length,
-              itemBuilder: (context, index) {
-                final device = widget.devices[index];
-                return _buildMachineCard(device);
-              },
+          : RefreshIndicator(
+              onRefresh: _refreshDeviceStatuses,
+              child: ListView.builder(
+                padding: const EdgeInsets.all(20),
+                itemCount: _devices.length,
+                itemBuilder: (context, index) {
+                  final device = _devices[index];
+                  return _buildMachineCard(device);
+                },
+              ),
             ),
     );
   }
@@ -208,14 +305,24 @@ class _MachineListPageState extends State<MachineListPage> {
     final String? endTime = device['device_booked_user_end_time'];
 
     final bool isGoodCondition = deviceCondition == 'good';
-    final bool isAvailable =
-        (deviceStatus == '0' || deviceStatus.toLowerCase() == 'ready') &&
-        isGoodCondition;
-    final bool isInUse =
-        deviceStatus != '0' &&
-        deviceStatus.toLowerCase() != 'ready' &&
-        isGoodCondition;
 
+    // Improved availability check - also check if devicestatus is empty/null
+    final bool isAvailable =
+        isGoodCondition &&
+        (deviceStatus == '0' ||
+            deviceStatus.toLowerCase() == 'ready' ||
+            deviceStatus.isEmpty ||
+            deviceStatus == 'null');
+
+    // Device is in use if it has a valid status that's not 0/ready/empty
+    final bool isInUse =
+        isGoodCondition &&
+        deviceStatus.isNotEmpty &&
+        deviceStatus != '0' &&
+        deviceStatus != 'null' &&
+        deviceStatus.toLowerCase() != 'ready';
+
+    // Under maintenance
     if (!isGoodCondition) {
       return GestureDetector(
         onTap: () => _showMaintenanceDialog(device),
@@ -239,6 +346,7 @@ class _MachineListPageState extends State<MachineListPage> {
       );
     }
 
+    // Available
     if (isAvailable) {
       return ElevatedButton(
         onPressed: () {
@@ -258,6 +366,7 @@ class _MachineListPageState extends State<MachineListPage> {
       );
     }
 
+    // In Use
     if (isInUse) {
       final String formattedTime = _formatEndTime(endTime);
 
@@ -309,7 +418,7 @@ class _MachineListPageState extends State<MachineListPage> {
     // Reset to default values
     setState(() {
       selectedWashMode = '';
-      washTimeMinutes = 0; // Start with 0, will be set when mode is selected
+      washTimeMinutes = 0;
       detergentPreferenceEnabled = true;
     });
 
@@ -439,8 +548,7 @@ class _MachineListPageState extends State<MachineListPage> {
                                     setModalState(() {
                                       setState(() {
                                         selectedWashMode = 'Quick Wash';
-                                        washTimeMinutes =
-                                            30; // Auto set to 30 min
+                                        washTimeMinutes = 30;
                                       });
                                     });
                                   },
@@ -454,8 +562,7 @@ class _MachineListPageState extends State<MachineListPage> {
                                     setModalState(() {
                                       setState(() {
                                         selectedWashMode = 'Normal Wash';
-                                        washTimeMinutes =
-                                            40; // Auto set to 40 min
+                                        washTimeMinutes = 40;
                                       });
                                     });
                                   },
@@ -464,7 +571,6 @@ class _MachineListPageState extends State<MachineListPage> {
                             ),
                             const SizedBox(height: 24),
 
-                            // Time & End Time section (non-editable) - Only show after wash mode selection
                             if (selectedWashMode.isNotEmpty) ...[
                               const Text(
                                 'Time & End Time',
