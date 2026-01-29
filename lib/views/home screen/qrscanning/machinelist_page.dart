@@ -32,11 +32,9 @@ class _MachineListPageState extends State<MachineListPage> {
   void initState() {
     super.initState();
     _devices = List.from(widget.devices);
-    // Immediately refresh device statuses on page load
     _refreshDeviceStatuses();
   }
 
-  /// Refresh device statuses from running jobs API
   Future<void> _refreshDeviceStatuses() async {
     if (_isRefreshing) return;
 
@@ -45,58 +43,68 @@ class _MachineListPageState extends State<MachineListPage> {
     });
 
     try {
-      debugPrint(' Refreshing device statuses for hub ${widget.hubId}...');
+      debugPrint('🔄 Refreshing device statuses for hub ${widget.hubId}...');
 
-      // Get fresh running jobs data
       final runningJobs = await HomeApi.getRunningJobs(forceRefresh: true);
+      final now = DateTime.now();
 
-      debugPrint(' Found ${runningJobs.length} running jobs');
+      debugPrint('📋 Found ${runningJobs.length} running jobs');
 
-      // Update device statuses based on running jobs
       for (var device in _devices) {
         final deviceId = device['deviceid']?.toString() ?? '';
 
-        // Store original status for comparison
         final oldStatus = device['devicestatus']?.toString() ?? '0';
-        final oldEndTime = device['device_booked_user_end_time'];
 
-        // Find if this device has a running job
         final runningJob = runningJobs.firstWhere(
           (job) => job['deviceid']?.toString() == deviceId,
           orElse: () => null,
         );
 
         if (runningJob != null) {
-          // Device has an active job - update with running job data
           final newStatus = runningJob['devicestatus']?.toString() ?? '0';
           final newEndTime = runningJob['device_booked_user_end_time'];
 
-          device['devicestatus'] = newStatus;
-          device['device_booked_user_end_time'] = newEndTime;
-
-          // Check if device just completed
+          // ✅ CHECK 1: If status is 100, mark as available
           if (newStatus == "100") {
             debugPrint(
-              ' Device $deviceId completed (status=100), marking as available',
+              '✅ Device $deviceId completed (status=100), marking as available',
             );
-            device['devicestatus'] = '0';
+            device['devicestatus'] = 'Ready';
             device['device_booked_user_end_time'] = null;
-          } else {
-            debugPrint(
-              ' Updated Device $deviceId: status=$newStatus, endTime=$newEndTime',
-            );
+            continue;
           }
+
+          // ✅ CHECK 2: If end time has passed, mark as available
+          if (newEndTime != null && newEndTime.toString().isNotEmpty) {
+            try {
+              final endTime = DateTime.parse(newEndTime.toString()).toLocal();
+              if (now.isAfter(endTime)) {
+                debugPrint(
+                  '✅ Device $deviceId end time passed (${DateFormat('HH:mm').format(endTime)}), marking as available',
+                );
+                device['devicestatus'] = 'Ready';
+                device['device_booked_user_end_time'] = null;
+                continue;
+              }
+            } catch (e) {
+              debugPrint('⚠️ Error parsing end time for device $deviceId: $e');
+            }
+          }
+
+          // ✅ Still running - update status and end time
+          device['devicestatus'] = newStatus;
+          device['device_booked_user_end_time'] = newEndTime;
+          debugPrint(
+            '⏳ Device $deviceId still running (status=$newStatus)',
+          );
         } else {
           // No running job found for this device
           if (oldStatus != '0' && oldStatus != 'ready') {
-            // Device was in use but job not found - mark as available
-            device['devicestatus'] = '0';
+            device['devicestatus'] = 'Ready';
             device['device_booked_user_end_time'] = null;
             debugPrint(
-              ' Device $deviceId job completed/not found, marked as available',
+              '✅ Device $deviceId job completed/not found, marked as available',
             );
-          } else {
-            debugPrint('ℹ️ Device $deviceId already available');
           }
         }
       }
@@ -107,9 +115,9 @@ class _MachineListPageState extends State<MachineListPage> {
         });
       }
 
-      debugPrint(' Device status refresh completed');
+      debugPrint('✅ Device status refresh completed');
     } catch (e) {
-      debugPrint(' Error refreshing device statuses: $e');
+      debugPrint('❌ Error refreshing device statuses: $e');
       if (mounted) {
         setState(() {
           _isRefreshing = false;
@@ -125,7 +133,7 @@ class _MachineListPageState extends State<MachineListPage> {
       final DateTime endTime = DateTime.parse(endTimeStr).toLocal();
       return DateFormat('h:mm a').format(endTime).toLowerCase();
     } catch (e) {
-      debugPrint(' Error formatting end time: $e');
+      debugPrint('⚠️ Error formatting end time: $e');
       return '10:15 pm';
     }
   }
@@ -136,16 +144,44 @@ class _MachineListPageState extends State<MachineListPage> {
     return DateFormat('h:mm a').format(endTime).toLowerCase();
   }
 
-  double _calculateTotalPrice() {
+  /// Calculate offer price based on wash mode and device data
+  double _calculateTotalPrice(Map<String, dynamic> device) {
+    if (selectedWashMode.isEmpty) return 0.0;
+
+    final deviceType = (device['devicetype'] ?? '').toString().toLowerCase();
+
     double offerPrice = 0.0;
 
     if (selectedWashMode == 'Quick Wash') {
-      offerPrice = 1.0;
+      offerPrice = _getPriceFromDevice(device, 'offer_quick_amount') ??
+          _getPriceFromDevice(device, 'offerQuickAmount') ??
+          _getPriceFromDevice(device, 'quick_wash_price') ??
+          1.0;
     } else if (selectedWashMode == 'Normal Wash') {
-      offerPrice = 100.0;
+      if (deviceType.contains('wash')) {
+        offerPrice = _getPriceFromDevice(device, 'offer_steam_amount') ??
+            _getPriceFromDevice(device, 'offerSteamAmount') ??
+            _getPriceFromDevice(device, 'normal_wash_price') ??
+            100.0;
+      } else {
+        offerPrice = _getPriceFromDevice(device, 'offer_normal_amount') ??
+            _getPriceFromDevice(device, 'offerNormalAmount') ??
+            100.0;
+      }
     }
 
+    debugPrint('💰 Price for $selectedWashMode: ₹$offerPrice');
     return offerPrice;
+  }
+
+  double? _getPriceFromDevice(Map<String, dynamic> device, String key) {
+    final value = device[key];
+    if (value == null) return null;
+
+    if (value is num) return value.toDouble();
+    if (value is String) return double.tryParse(value);
+
+    return null;
   }
 
   @override
@@ -298,32 +334,14 @@ class _MachineListPageState extends State<MachineListPage> {
   }
 
   Widget _buildStatusButton(Map<String, dynamic> device) {
-    final String deviceStatus = (device['devicestatus'] ?? '0').toString();
-    final String deviceCondition = (device['devicecondition'] ?? 'Good')
-        .toString()
-        .toLowerCase();
-    final String? endTime = device['device_booked_user_end_time'];
+    final String deviceStatus =
+        (device['devicestatus'] ?? '0').toString().toLowerCase();
+    final String deviceCondition =
+        (device['devicecondition'] ?? 'Good').toString().toLowerCase();
+    final String? endTimeStr = device['device_booked_user_end_time'];
 
-    final bool isGoodCondition = deviceCondition == 'good';
-
-    // Improved availability check - also check if devicestatus is empty/null
-    final bool isAvailable =
-        isGoodCondition &&
-        (deviceStatus == '0' ||
-            deviceStatus.toLowerCase() == 'ready' ||
-            deviceStatus.isEmpty ||
-            deviceStatus == 'null');
-
-    // Device is in use if it has a valid status that's not 0/ready/empty
-    final bool isInUse =
-        isGoodCondition &&
-        deviceStatus.isNotEmpty &&
-        deviceStatus != '0' &&
-        deviceStatus != 'null' &&
-        deviceStatus.toLowerCase() != 'ready';
-
-    // Under maintenance
-    if (!isGoodCondition) {
+    // ✅ CHECK 1: Under Maintenance if condition is NOT "good"
+    if (deviceCondition != 'good') {
       return GestureDetector(
         onTap: () => _showMaintenanceDialog(device),
         child: Container(
@@ -346,8 +364,8 @@ class _MachineListPageState extends State<MachineListPage> {
       );
     }
 
-    // Available
-    if (isAvailable) {
+    // ✅ CHECK 2: Available if status is "ready" AND condition is "good"
+    if (deviceStatus == 'ready' && deviceCondition == 'good') {
       return ElevatedButton(
         onPressed: () {
           _showWashOptionsModal(device);
@@ -366,46 +384,184 @@ class _MachineListPageState extends State<MachineListPage> {
       );
     }
 
-    // In Use
-    if (isInUse) {
-      final String formattedTime = _formatEndTime(endTime);
+    // ✅ CHECK 3: If status is numeric (0-100) AND condition is "good"
+    final numericStatus = int.tryParse(deviceStatus);
+    if (numericStatus != null &&
+        numericStatus >= 0 &&
+        numericStatus <= 100 &&
+        deviceCondition == 'good') {
+      // ✅ CHECK 3A: If status is 100 (completed), show as Available
+      if (numericStatus == 100) {
+        debugPrint(
+          '✅ Device ${device['deviceid']} status is 100, showing as Available',
+        );
+        return ElevatedButton(
+          onPressed: () {
+            _showWashOptionsModal(device);
+          },
+          style: ElevatedButton.styleFrom(
+            backgroundColor: const Color(0xFF2196F3),
+            foregroundColor: Colors.white,
+            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+            elevation: 0,
+          ),
+          child: const Text(
+            'Available',
+            style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+          ),
+        );
+      }
 
-      return GestureDetector(
-        onTap: () => _showAvailabilityDialog(device),
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-          decoration: BoxDecoration(
-            color: const Color(0xFF78909C),
-            borderRadius: BorderRadius.circular(6),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.center,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Text(
-                'Available at',
-                style: TextStyle(
-                  fontSize: 10,
-                  color: Colors.white,
-                  fontWeight: FontWeight.w500,
+      // ✅ CHECK 3B: Status is 0-99, check if end time has passed
+      if (endTimeStr != null && endTimeStr.isNotEmpty) {
+        try {
+          final endTime = DateTime.parse(endTimeStr).toLocal();
+          final now = DateTime.now();
+
+          // If end time has passed, show as Available
+          if (now.isAfter(endTime)) {
+            debugPrint(
+              '✅ Device ${device['deviceid']} end time passed, showing as Available',
+            );
+            return ElevatedButton(
+              onPressed: () {
+                _showWashOptionsModal(device);
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF2196F3),
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 24,
+                  vertical: 12,
                 ),
-              ),
-              const SizedBox(height: 2),
-              Text(
-                formattedTime,
-                style: const TextStyle(
-                  fontSize: 12,
-                  color: Colors.white,
-                  fontWeight: FontWeight.w700,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(6),
                 ),
+                elevation: 0,
               ),
-            ],
+              child: const Text(
+                'Available',
+                style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+              ),
+            );
+          }
+
+          // Still running - show "Available at" time
+          final String formattedTime = _formatEndTime(endTimeStr);
+
+          return GestureDetector(
+            onTap: () => _showAvailabilityDialog(device),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              decoration: BoxDecoration(
+                color: const Color(0xFF78909C),
+                borderRadius: BorderRadius.circular(6),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Text(
+                    'Available at',
+                    style: TextStyle(
+                      fontSize: 10,
+                      color: Colors.white,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    formattedTime,
+                    style: const TextStyle(
+                      fontSize: 12,
+                      color: Colors.white,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        } catch (e) {
+          debugPrint('⚠️ Error parsing end time: $e');
+          // If error parsing time, show as available
+          return ElevatedButton(
+            onPressed: () {
+              _showWashOptionsModal(device);
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF2196F3),
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(6),
+              ),
+              elevation: 0,
+            ),
+            child: const Text(
+              'Available',
+              style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+            ),
+          );
+        }
+      } else {
+        // No end time but status is numeric and condition is good
+        // Show "Available at" with placeholder time
+        return GestureDetector(
+          onTap: () => _showAvailabilityDialog(device),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            decoration: BoxDecoration(
+              color: const Color(0xFF78909C),
+              borderRadius: BorderRadius.circular(6),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              mainAxisSize: MainAxisSize.min,
+              children: const [
+                Text(
+                  'Available at',
+                  style: TextStyle(
+                    fontSize: 10,
+                    color: Colors.white,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+                SizedBox(height: 2),
+                Text(
+                  '10:15 pm',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Colors.white,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ],
+            ),
           ),
-        ),
-      );
+        );
+      }
     }
 
-    return Container();
+    // Fallback: Show as available
+    return ElevatedButton(
+      onPressed: () {
+        _showWashOptionsModal(device);
+      },
+      style: ElevatedButton.styleFrom(
+        backgroundColor: const Color(0xFF2196F3),
+        foregroundColor: Colors.white,
+        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+        elevation: 0,
+      ),
+      child: const Text(
+        'Available',
+        style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+      ),
+    );
   }
 
   void _showWashOptionsModal(Map<String, dynamic> device) {
@@ -415,7 +571,6 @@ class _MachineListPageState extends State<MachineListPage> {
         '${deviceType.toLowerCase().substring(0, 1).toUpperCase()}${deviceType.toLowerCase().substring(1)} ${deviceId.toString().padLeft(2, '0')}';
     final String machineId = '#${deviceId.toString()}';
 
-    // Reset to default values
     setState(() {
       selectedWashMode = '';
       washTimeMinutes = 0;
@@ -546,10 +701,8 @@ class _MachineListPageState extends State<MachineListPage> {
                                   setModalState,
                                   () {
                                     setModalState(() {
-                                      setState(() {
-                                        selectedWashMode = 'Quick Wash';
-                                        washTimeMinutes = 30;
-                                      });
+                                      selectedWashMode = 'Quick Wash';
+                                      washTimeMinutes = 30;
                                     });
                                   },
                                 ),
@@ -560,17 +713,14 @@ class _MachineListPageState extends State<MachineListPage> {
                                   setModalState,
                                   () {
                                     setModalState(() {
-                                      setState(() {
-                                        selectedWashMode = 'Normal Wash';
-                                        washTimeMinutes = 40;
-                                      });
+                                      selectedWashMode = 'Normal Wash';
+                                      washTimeMinutes = 40;
                                     });
                                   },
                                 ),
                               ],
                             ),
                             const SizedBox(height: 24),
-
                             if (selectedWashMode.isNotEmpty) ...[
                               const Text(
                                 'Time & End Time',
@@ -618,31 +768,41 @@ class _MachineListPageState extends State<MachineListPage> {
                                 ],
                               ),
                             ],
-
                             const SizedBox(height: 32),
                             Center(
                               child: ElevatedButton(
-                                onPressed: () {
-                                  Navigator.pop(context);
+                                onPressed: selectedWashMode.isEmpty
+                                    ? null
+                                    : () {
+                                        Navigator.pop(context);
 
-                                  Navigator.push(
-                                    context,
-                                    MaterialPageRoute(
-                                      builder: (context) => PaymentDetailsPage(
-                                        hubName: widget.hubName,
-                                        hubId: widget.hubId,
-                                        deviceId: device['deviceid'] ?? 0,
-                                        machineId: machineId,
-                                        washMode: selectedWashMode,
-                                        washTime: '$washTimeMinutes Min',
-                                        totalPrice: _calculateTotalPrice(),
-                                      ),
-                                    ),
-                                  );
-                                },
+                                        final totalPrice = _calculateTotalPrice(
+                                          device,
+                                        );
+
+                                        Navigator.push(
+                                          context,
+                                          MaterialPageRoute(
+                                            builder: (context) =>
+                                                PaymentDetailsPage(
+                                              hubName: widget.hubName,
+                                              hubId: widget.hubId,
+                                              deviceId: device['deviceid'] ?? 0,
+                                              machineId: machineId,
+                                              washMode: selectedWashMode,
+                                              washTime: '$washTimeMinutes Min',
+                                              totalPrice: totalPrice,
+                                            ),
+                                          ),
+                                        );
+                                      },
                                 style: ElevatedButton.styleFrom(
-                                  backgroundColor: const Color(0xFF2196F3),
-                                  foregroundColor: Colors.white,
+                                  backgroundColor: selectedWashMode.isEmpty
+                                      ? Colors.grey[300]
+                                      : const Color(0xFF2196F3),
+                                  foregroundColor: selectedWashMode.isEmpty
+                                      ? Colors.grey[500]
+                                      : Colors.white,
                                   padding: const EdgeInsets.symmetric(
                                     horizontal: 48,
                                     vertical: 14,
@@ -651,6 +811,8 @@ class _MachineListPageState extends State<MachineListPage> {
                                     borderRadius: BorderRadius.circular(8),
                                   ),
                                   elevation: 0,
+                                  disabledBackgroundColor: Colors.grey[300],
+                                  disabledForegroundColor: Colors.grey[500],
                                 ),
                                 child: const Text(
                                   'CONTINUE',

@@ -40,18 +40,25 @@ class _PaymentDetailsPageState extends State<PaymentDetailsPage> {
   late double _currentAmount;
   bool _isEditingAmount = false;
 
+  // Original price before discount (for display purposes)
+  double _originalPrice = 150.0;
+
   static const String razorpayKeyId = 'rzp_live_MtPtY0alVfSmZc';
   static const int paymentTimeout = 600; // 10 minutes
 
   @override
   void initState() {
     super.initState();
-    // Initialize with offer price (discounted price)
-    final breakdown = _calculatePriceBreakdown();
-    _currentAmount = breakdown['offer']!;
+    // Initialize with the passed totalPrice (this is the offer price)
+    _currentAmount = widget.totalPrice;
     _amountController = TextEditingController(
       text: _currentAmount.toStringAsFixed(0),
     );
+
+    // Calculate original price based on offer price
+    // Assuming offer is typically 33-50% off
+    _originalPrice = widget.totalPrice > 50 ? 150.0 : 100.0;
+
     _initializeRazorpay();
   }
 
@@ -93,7 +100,7 @@ class _PaymentDetailsPageState extends State<PaymentDetailsPage> {
         'Invalid Amount',
         'Please enter a valid amount greater than 0',
       );
-      _amountController.text = _currentAmount.toStringAsFixed(2);
+      _amountController.text = _currentAmount.toStringAsFixed(0);
       return;
     }
 
@@ -105,15 +112,12 @@ class _PaymentDetailsPageState extends State<PaymentDetailsPage> {
   }
 
   void _resetAmount() {
-    final breakdown = _calculatePriceBreakdown();
-    final offerPrice = breakdown['offer']!;
-
     setState(() {
-      _currentAmount = offerPrice;
+      _currentAmount = widget.totalPrice;
       _amountController.text = _currentAmount.toStringAsFixed(0);
       _isEditingAmount = false;
     });
-    debugPrint('🔄 Amount reset to offer price: $_currentAmount');
+    debugPrint('🔄 Amount reset to original price: $_currentAmount');
   }
 
   // ==================== USER CREDENTIALS ====================
@@ -123,12 +127,10 @@ class _PaymentDetailsPageState extends State<PaymentDetailsPage> {
 
     final mobile =
         prefs.getString('user_mobile') ?? prefs.getString('usermobile') ?? '';
-    final token =
-        prefs.getString('session_token') ??
+    final token = prefs.getString('session_token') ??
         prefs.getString('sessionToken') ??
         '';
-    final userName =
-        prefs.getString('user_name') ??
+    final userName = prefs.getString('user_name') ??
         prefs.getString('username') ??
         prefs.getString('usermame') ??
         'User';
@@ -143,8 +145,7 @@ class _PaymentDetailsPageState extends State<PaymentDetailsPage> {
   Future<int> _getUserId() async {
     final prefs = await SharedPreferences.getInstance();
 
-    int userId =
-        prefs.getInt('user_id') ??
+    int userId = prefs.getInt('user_id') ??
         prefs.getInt('userid') ??
         prefs.getInt('userId') ??
         0;
@@ -177,10 +178,8 @@ class _PaymentDetailsPageState extends State<PaymentDetailsPage> {
     final now = DateTime.now();
     final startTime = now.toUtc().toIso8601String();
     final durationMinutes = int.tryParse(widget.washTime.split(' ')[0]) ?? 30;
-    final endTime = now
-        .add(Duration(minutes: durationMinutes))
-        .toUtc()
-        .toIso8601String();
+    final endTime =
+        now.add(Duration(minutes: durationMinutes)).toUtc().toIso8601String();
 
     debugPrint('📤 Booking device...');
     debugPrint('   Amount: ${_currentAmount.toInt()}');
@@ -190,15 +189,11 @@ class _PaymentDetailsPageState extends State<PaymentDetailsPage> {
       sessionToken: token,
       hubId: widget.hubId,
       deviceId: widget.deviceId,
-      deviceCondition: 'Good',
-     
       mobileNumber: mobile,
       startTime: startTime,
       endTime: endTime,
       washMode: widget.washMode,
-      detergentPreference: 'None',
       duration: widget.washTime,
-      transactionStatus: 'Success',
       paymentId: paymentId,
       transactionTime: now.toUtc().toIso8601String(),
       transactionAmount: _currentAmount.toInt(),
@@ -208,7 +203,6 @@ class _PaymentDetailsPageState extends State<PaymentDetailsPage> {
       throw Exception(bookingResponse['message'] ?? 'Booking failed');
     }
 
-    // Store booking locally for backup
     await _storeBookingLocally(
       paymentId: paymentId,
       startTime: startTime,
@@ -245,7 +239,6 @@ class _PaymentDetailsPageState extends State<PaymentDetailsPage> {
       debugPrint('💾 Stored booking locally: $bookingKey');
     } catch (e) {
       debugPrint('⚠️ Failed to store booking locally: $e');
-      // Non-critical error, don't throw
     }
   }
 
@@ -268,8 +261,7 @@ class _PaymentDetailsPageState extends State<PaymentDetailsPage> {
       final credentials = await _getUserCredentials();
 
       await _bookDevice(
-        paymentId:
-            response.paymentId ??
+        paymentId: response.paymentId ??
             _pendingOrderId ??
             'RAZORPAY_${DateTime.now().millisecondsSinceEpoch}',
         mobile: credentials['mobile']!,
@@ -313,7 +305,6 @@ class _PaymentDetailsPageState extends State<PaymentDetailsPage> {
 
     setState(() => _isProcessing = false);
 
-    // User cancelled payment - show snackbar instead of dialog
     if (response.code == 0 ||
         response.message?.toLowerCase().contains('cancel') == true ||
         response.message?.toLowerCase().contains('user cancelled') == true) {
@@ -328,7 +319,6 @@ class _PaymentDetailsPageState extends State<PaymentDetailsPage> {
       return;
     }
 
-    // Actual payment error - show dialog
     String errorMessage = 'Payment failed. Please try again.';
     if (response.message != null && response.message!.isNotEmpty) {
       errorMessage = response.message!.toLowerCase().contains('failed')
@@ -367,7 +357,6 @@ class _PaymentDetailsPageState extends State<PaymentDetailsPage> {
         '💰 Amount: ₹$_currentAmount (${(_currentAmount * 100).toInt()} paise)',
       );
 
-      // Show loading dialog
       if (mounted) {
         showDialog(
           context: context,
@@ -400,7 +389,6 @@ class _PaymentDetailsPageState extends State<PaymentDetailsPage> {
         );
       }
 
-      // Create payment order
       debugPrint('🔄 Creating payment order...');
       final orderResponse = await HomeApi.createPaymentOrder(
         amount: (_currentAmount * 100).toInt(),
@@ -420,13 +408,11 @@ class _PaymentDetailsPageState extends State<PaymentDetailsPage> {
       _pendingOrderId = orderId;
       debugPrint('✅ Order created: $orderId');
 
-      // Close loading dialog
       if (dialogContext != null && mounted) {
         Navigator.pop(dialogContext!);
         dialogContext = null;
       }
 
-      // Small delay before opening Razorpay
       await Future.delayed(const Duration(milliseconds: 300));
 
       if (mounted) {
@@ -536,34 +522,12 @@ class _PaymentDetailsPageState extends State<PaymentDetailsPage> {
     );
   }
 
-  Map<String, double> _calculatePriceBreakdown() {
-    double actualPrice = 0.0;
-    double offerPrice = 0.0;
-
-    // Wash mode pricing
-    if (widget.washMode == 'Quick Wash') {
-      actualPrice = 100.0;
-      offerPrice = 1.0;
-    } else if (widget.washMode == 'Normal Wash') {
-      actualPrice = 150.0;
-      offerPrice = 100.0;
-    }
-
-    return {
-      'actual': actualPrice,
-      'offer': offerPrice,
-      'discount': actualPrice - offerPrice,
-    };
-  }
-
   // ==================== BUILD UI ====================
 
   @override
   Widget build(BuildContext context) {
-    final breakdown = _calculatePriceBreakdown();
-    final actualPrice = breakdown['actual']!;
-    final offerPrice = breakdown['offer']!;
-    final discount = breakdown['discount']!;
+    // Calculate discount
+    final discount = _originalPrice - _currentAmount;
 
     return Scaffold(
       backgroundColor: Colors.white,
@@ -670,26 +634,20 @@ class _PaymentDetailsPageState extends State<PaymentDetailsPage> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.end,
                       children: [
-                        if (discount > 0)
-                          Text(
-                            '₹${actualPrice.toStringAsFixed(0)}',
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: Colors.grey[600],
-                              decoration: TextDecoration.lineThrough,
-                            ),
-                          ),
                         Text(
-                          '₹${offerPrice.toStringAsFixed(0)}',
-                          textAlign: TextAlign.right,
+                          '₹${_originalPrice.toStringAsFixed(0)}',
                           style: TextStyle(
+                            fontSize: 11,
+                            color: Colors.grey[600],
+                            decoration: TextDecoration.lineThrough,
+                          ),
+                        ),
+                        Text(
+                          '₹${_currentAmount.toStringAsFixed(0)}',
+                          style: const TextStyle(
                             fontSize: 13,
-                            color: discount > 0
-                                ? const Color(0xFF4CAF50)
-                                : Colors.black87,
-                            fontWeight: discount > 0
-                                ? FontWeight.w600
-                                : FontWeight.w400,
+                            color: Color(0xFF4CAF50),
+                            fontWeight: FontWeight.w600,
                           ),
                         ),
                       ],
@@ -697,52 +655,32 @@ class _PaymentDetailsPageState extends State<PaymentDetailsPage> {
                   ),
                 ],
               ),
-              const SizedBox(height: 8),
-
               const SizedBox(height: 16),
-
-              // OFFER BADGE
+              // OFFER Badge
               if (discount > 0)
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.end,
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 6,
-                      ),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFF4CAF50),
-                        borderRadius: BorderRadius.circular(6),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          const Text(
-                            'OFFER',
-                            style: TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w700,
-                              color: Colors.white,
-                              letterSpacing: 0.5,
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          Text(
-                            '-₹${discount.toStringAsFixed(0)}',
-                            style: const TextStyle(
-                              fontSize: 13,
-                              fontWeight: FontWeight.w700,
-                              color: Colors.white,
-                            ),
-                          ),
-                        ],
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 6,
+                    ),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF4CAF50),
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: Text(
+                      'OFFER -₹${discount.toStringAsFixed(0)}',
+                      style: const TextStyle(
+                        fontSize: 12,
+                        color: Colors.white,
+                        fontWeight: FontWeight.w600,
                       ),
                     ),
-                  ],
+                  ),
                 ),
+              const SizedBox(height: 24),
 
-              const SizedBox(height: 16),
               Container(
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
@@ -792,8 +730,8 @@ class _PaymentDetailsPageState extends State<PaymentDetailsPage> {
                               controller: _amountController,
                               keyboardType:
                                   const TextInputType.numberWithOptions(
-                                    decimal: true,
-                                  ),
+                                decimal: true,
+                              ),
                               inputFormatters: [
                                 FilteringTextInputFormatter.allow(
                                   RegExp(r'^\d+\.?\d{0,2}'),
@@ -829,8 +767,8 @@ class _PaymentDetailsPageState extends State<PaymentDetailsPage> {
                             onPressed: () {
                               setState(() {
                                 _isEditingAmount = false;
-                                _amountController.text = _currentAmount
-                                    .toStringAsFixed(2);
+                                _amountController.text =
+                                    _currentAmount.toStringAsFixed(0);
                               });
                             },
                             padding: EdgeInsets.zero,
@@ -839,13 +777,13 @@ class _PaymentDetailsPageState extends State<PaymentDetailsPage> {
                         ],
                       ],
                     ),
-                    if (_currentAmount != offerPrice) ...[
+                    if (_currentAmount != widget.totalPrice) ...[
                       const SizedBox(height: 8),
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
                           Text(
-                            'Original: ₹${offerPrice.toStringAsFixed(0)}',
+                            'Original: ₹${widget.totalPrice.toStringAsFixed(0)}',
                             style: TextStyle(
                               fontSize: 12,
                               color: Colors.grey[600],
@@ -873,13 +811,11 @@ class _PaymentDetailsPageState extends State<PaymentDetailsPage> {
                 child: SizedBox(
                   width: 200,
                   child: ElevatedButton(
-                    onPressed: _isProcessing
-                        ? null
-                        : () => _processPayment(context),
+                    onPressed:
+                        _isProcessing ? null : () => _processPayment(context),
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: _isProcessing
-                          ? Colors.grey
-                          : const Color(0xFF4A90E2),
+                      backgroundColor:
+                          _isProcessing ? Colors.grey : const Color(0xFF4A90E2),
                       foregroundColor: Colors.white,
                       padding: const EdgeInsets.symmetric(
                         horizontal: 40,

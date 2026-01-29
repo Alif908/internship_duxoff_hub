@@ -365,7 +365,8 @@ class _OtpVerifyPageState extends State<OtpVerifyPage> {
           children: [
             Icon(
               isError ? Icons.error_outline : Icons.check_circle_outline,
-              color: Colors.white,
+              color: Color(0xFFFFFFFF),
+
               size: 20,
             ),
             const SizedBox(width: 12),
@@ -374,7 +375,7 @@ class _OtpVerifyPageState extends State<OtpVerifyPage> {
             ),
           ],
         ),
-        backgroundColor: isError ? Colors.red[700] : Colors.green[700],
+        backgroundColor: isError ? Color(0xFFD32F2F) : Color(0xFF388E3C),
         behavior: SnackBarBehavior.floating,
         margin: const EdgeInsets.all(16),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
@@ -390,7 +391,7 @@ class _OtpVerifyPageState extends State<OtpVerifyPage> {
         : widget.mobileNumber;
 
     return Scaffold(
-      backgroundColor: Colors.white,
+      backgroundColor: Color(0xFFFFFFFF),
       body: SafeArea(
         child: SingleChildScrollView(
           child: Padding(
@@ -404,7 +405,7 @@ class _OtpVerifyPageState extends State<OtpVerifyPage> {
                   style: TextStyle(
                     fontSize: 28,
                     fontWeight: FontWeight.bold,
-                    color: Colors.black,
+                    color: Color(0xFF000000),
                   ),
                 ),
 
@@ -415,7 +416,7 @@ class _OtpVerifyPageState extends State<OtpVerifyPage> {
                   text: TextSpan(
                     style: const TextStyle(
                       fontSize: 13,
-                      color: Colors.black87,
+                      color: Color(0xDD000000),
                       height: 1.5,
                     ),
                     children: [
@@ -445,7 +446,10 @@ class _OtpVerifyPageState extends State<OtpVerifyPage> {
                       width: 50,
                       height: 50,
                       decoration: BoxDecoration(
-                        border: Border.all(color: Colors.black, width: 1.5),
+                        border: Border.all(
+                          color: const Color(0xFF000000),
+                          width: 1.5,
+                        ),
                         borderRadius: BorderRadius.circular(8),
                       ),
                       child: TextField(
@@ -486,7 +490,7 @@ class _OtpVerifyPageState extends State<OtpVerifyPage> {
                     onPressed: _isLoading ? null : _handleSubmit,
                     style: ElevatedButton.styleFrom(
                       backgroundColor: const Color(0xFF4A90E2),
-                      foregroundColor: Colors.white,
+                      foregroundColor: Color(0xFFFFFFFF),
                       padding: const EdgeInsets.symmetric(vertical: 12),
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(8),
@@ -501,7 +505,7 @@ class _OtpVerifyPageState extends State<OtpVerifyPage> {
                             height: 18,
                             width: 18,
                             child: CircularProgressIndicator(
-                              color: Colors.white,
+                              color: Color(0xFFFFFFFF),
                               strokeWidth: 2,
                             ),
                           )
@@ -522,7 +526,7 @@ class _OtpVerifyPageState extends State<OtpVerifyPage> {
                   children: [
                     const Text(
                       "Didn't receive the OTP? ",
-                      style: TextStyle(fontSize: 13, color: Colors.black87),
+                      style: TextStyle(fontSize: 13, color: Color(0xDD000000)),
                     ),
                     GestureDetector(
                       onTap: _canResend && !_isLoading
@@ -535,8 +539,9 @@ class _OtpVerifyPageState extends State<OtpVerifyPage> {
                         style: TextStyle(
                           fontSize: 13,
                           color: (_canResend && !_isLoading)
-                              ? Colors.blue[700]
-                              : Colors.grey,
+                              ? Color(0xFF1976D2)
+                              : Color(0xFF9E9E9E),
+
                           fontWeight: FontWeight.bold,
                           decoration: (_canResend && !_isLoading)
                               ? TextDecoration.underline
@@ -560,7 +565,7 @@ class _OtpVerifyPageState extends State<OtpVerifyPage> {
                       child: Icon(
                         Icons.lock_outline,
                         size: 80,
-                        color: Colors.grey[400],
+                        color: Color(0xFFBDBDBD),
                       ),
                     );
                   },

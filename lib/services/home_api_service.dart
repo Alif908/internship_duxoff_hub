@@ -38,7 +38,6 @@ class HomeApi {
 
     return {'mobile': mobile, 'token': token};
   }
-  
 
   static Future<List<Map<String, dynamic>>> getBookingHistory() async {
     try {
@@ -495,14 +494,11 @@ class HomeApi {
   static Future<Map<String, dynamic>> bookDevice({
     required String hubId,
     required int deviceId,
-    required String deviceCondition,
     required String mobileNumber,
     required String startTime,
     required String endTime,
     required String washMode,
-    required String detergentPreference,
     required String duration,
-    required String transactionStatus,
     required String paymentId,
     required String transactionTime,
     required int transactionAmount,
@@ -533,15 +529,16 @@ class HomeApi {
       final body = {
         'hubid': hubId,
         'deviceid': deviceId,
-        'devicecondition': deviceCondition,
+        'devicecondition': 'Good', // ✅ CHANGED: Always "Good"
         'devicestatus': "0", // ⚠️ HARDCODED TO "0" - DO NOT CHANGE
         'device_booked_user_mobile_no': mobile,
         'device_booked_user_start_time': startTime,
         'device_booked_user_end_time': endTime,
         'booked_user_selected_wash_mode': washMode,
-        'booked_user_selected_detergent_preference': detergentPreference,
+        'booked_user_selected_detergent_preference':
+            'ecofriendly', // ✅ CHANGED: Always "ecofriendly"
         'booked_user_selected_duration': duration,
-        'transactionstatus': transactionStatus,
+        'transactionstatus': 'Success', // ✅ CHANGED: Always "Success"
         'paymentid': paymentId,
         'transactiontime': transactionTime,
         'transactionamount': transactionAmount,
@@ -553,15 +550,16 @@ class HomeApi {
       debugPrint('   Hub ID: $hubId');
       debugPrint('   Device ID: $deviceId');
       debugPrint('   Device Status: 0 (FORCED)');
-      debugPrint('   Device Condition: $deviceCondition');
+      debugPrint('   Device Condition: Good (FIXED)');
       debugPrint('   Mobile: $mobile');
       debugPrint('   Wash Mode: $washMode');
+      debugPrint('   Detergent Preference: ecofriendly (FIXED)');
       debugPrint('   Duration: $duration');
       debugPrint('   Amount: ₹$transactionAmount');
       debugPrint('   Payment ID: $paymentId');
+      debugPrint('   Transaction Status: Success (FIXED)');
       debugPrint('   Start Time: $startTime');
       debugPrint('   End Time: $endTime');
-      debugPrint('   Transaction Status: $transactionStatus');
       debugPrint('====================================');
 
       final response = await http

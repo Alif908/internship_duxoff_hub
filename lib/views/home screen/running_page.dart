@@ -27,6 +27,9 @@ class _RunningJobsPageState extends State<RunningJobsPage> {
   Timer? _apiRefreshTimer;
   Timer? _completionCheckTimer;
 
+  // Track which jobs have been saved to prevent duplicates
+  Set<String> _savedJobKeys = {};
+
   @override
   void initState() {
     super.initState();
@@ -72,6 +75,40 @@ class _RunningJobsPageState extends State<RunningJobsPage> {
         return;
       }
 
+      // Create unique identifier for this job
+      final jobIdentifier = '${deviceId}_$endTime';
+
+      // Check if already saved
+      if (_savedJobKeys.contains(jobIdentifier)) {
+        debugPrint('⏭️ Job already saved to history: $jobIdentifier');
+        return;
+      }
+
+      // ✅ VERIFICATION: Double-check the job is actually completed before saving
+      final deviceStatus = (job['devicestatus'] ?? '').toString();
+      bool isReallyCompleted = false;
+
+      // Check 1: Status is 100
+      if (deviceStatus == "100") {
+        isReallyCompleted = true;
+      } else {
+        // Check 2: End time has passed
+        try {
+          final endDateTime = DateTime.parse(endTime).toLocal();
+          if (DateTime.now().isAfter(endDateTime)) {
+            isReallyCompleted = true;
+          }
+        } catch (e) {
+          debugPrint('⚠️ Error verifying completion time: $e');
+        }
+      }
+
+      if (!isReallyCompleted) {
+        debugPrint(
+            '⚠️ Job not actually completed yet, skipping save: $jobIdentifier');
+        return;
+      }
+
       // Create unique key for this booking
       final timestamp = DateTime.now().millisecondsSinceEpoch;
       final bookingKey = 'booking_${deviceId}_$timestamp';
@@ -91,14 +128,19 @@ class _RunningJobsPageState extends State<RunningJobsPage> {
             job['booked_user_selected_detergent_preference'] ?? 'O3 Treat',
         'paymentid': job['paymentid'] ?? '',
         'timestamp': DateTime.now().toIso8601String(),
+        'completed': true, // ✅ Mark as completed
       };
 
       await prefs.setString(bookingKey, jsonEncode(bookingData));
+
+      // Mark as saved
+      _savedJobKeys.add(jobIdentifier);
 
       debugPrint('✅ Saved completed job to history: $bookingKey');
       debugPrint('   Device ID: $deviceId');
       debugPrint('   Amount: ${bookingData['amount']}');
       debugPrint('   End Time: $endTime');
+      debugPrint('   Status at save: $deviceStatus');
     } catch (e) {
       debugPrint('❌ Error saving completed job to history: $e');
     }
@@ -112,42 +154,43 @@ class _RunningJobsPageState extends State<RunningJobsPage> {
     final List<dynamic> justCompleted = [];
 
     for (var job in _runningJobsList) {
-      // Check device status first - if it's "100", job is complete
-      final String? deviceStatus = job['devicestatus']?.toString();
+      bool isCompleted = false;
 
+      // ✅ PRIMARY CHECK: Device status = "100" means completed
+      final String? deviceStatus = job['devicestatus']?.toString();
       if (deviceStatus == "100") {
-        justCompleted.add(job);
+        isCompleted = true;
         debugPrint(
           '✅ Job completed (devicestatus=100): Device ${job['deviceid']}',
         );
-        continue;
+      } else {
+        // ✅ SECONDARY CHECK: End time has passed
+        final String? endTimeString =
+            job['device_booked_user_end_time']?.toString();
+
+        if (endTimeString != null && endTimeString.isNotEmpty) {
+          try {
+            DateTime endTime = DateTime.parse(endTimeString);
+            if (endTime.isUtc || endTimeString.endsWith('Z')) {
+              endTime = endTime.toLocal();
+            }
+
+            // Only mark as completed if current time is AFTER end time
+            if (now.isAfter(endTime)) {
+              isCompleted = true;
+              debugPrint(
+                '✅ Job completed (time passed): Device ${job['deviceid']} at ${DateFormat('HH:mm').format(endTime)}',
+              );
+            }
+          } catch (e) {
+            debugPrint('⚠️ Error parsing end time: $e');
+          }
+        }
       }
 
-      // Also check end time
-      final String? endTimeString = job['device_booked_user_end_time']
-          ?.toString();
-
-      if (endTimeString != null && endTimeString.isNotEmpty) {
-        try {
-          DateTime endTime = DateTime.parse(endTimeString);
-          if (endTime.isUtc || endTimeString.endsWith('Z')) {
-            endTime = endTime.toLocal();
-          }
-
-          // Check if job is actually completed (current time is AFTER end time)
-          if (now.isBefore(endTime)) {
-            // Still running
-            stillRunning.add(job);
-          } else {
-            // Completed - current time is after end time
-            justCompleted.add(job);
-            debugPrint(
-              '✅ Job completed (time): Device ${job['deviceid']} at ${DateFormat('HH:mm').format(endTime)}',
-            );
-          }
-        } catch (e) {
-          stillRunning.add(job);
-        }
+      // Sort into completed or still running
+      if (isCompleted) {
+        justCompleted.add(job);
       } else {
         stillRunning.add(job);
       }
@@ -159,15 +202,21 @@ class _RunningJobsPageState extends State<RunningJobsPage> {
         _runningJobsList = stillRunning;
 
         for (var job in justCompleted) {
-          if (!_recentlyCompletedJobs.any(
+          // Check if already in recently completed
+          final alreadyInCompleted = _recentlyCompletedJobs.any(
             (existing) =>
                 existing['deviceid'] == job['deviceid'] &&
                 existing['device_booked_user_end_time'] ==
                     job['device_booked_user_end_time'],
-          )) {
+          );
+
+          if (!alreadyInCompleted) {
             _recentlyCompletedJobs.insert(0, job);
 
-            // Save to local storage for history page
+            // ✅ CRITICAL FIX: ONLY save to history AFTER job is truly completed
+            // This prevents incomplete jobs from appearing in history
+            debugPrint(
+                '💾 Saving completed job to history: Device ${job['deviceid']}');
             _saveCompletedJobToHistory(job);
           }
         }
@@ -240,30 +289,16 @@ class _RunningJobsPageState extends State<RunningJobsPage> {
         debugPrint(
           '   devicestatus from API: "${deviceStatus.isEmpty ? 'MISSING/NULL' : deviceStatus}"',
         );
-        debugPrint(
-          '   devicestatus type: ${deviceStatus.isEmpty ? 'empty' : job['devicestatus'].runtimeType}',
-        );
         debugPrint('   End time: $endTimeString');
-        debugPrint('   ALL FIELDS:');
 
-        job.forEach((key, value) {
-          if (key.toLowerCase().contains('status') ||
-              key.toLowerCase().contains('progress') ||
-              key.toLowerCase().contains('percent')) {
-            debugPrint('   ⭐ $key: $value (${value.runtimeType})');
-          } else {
-            debugPrint('      $key: $value');
-          }
-        });
-
-        // ✅ CHECK 1: Skip if devicestatus is explicitly "100" (completed)
+        // ✅ CHECK 1: Skip if devicestatus is "100" (completed)
         if (deviceStatus == "100") {
           debugPrint('   ⏭️ SKIPPED: Job completed (devicestatus=100)');
           debugPrint('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
           continue;
         }
 
-        // ✅ CHECK 2: Verify end time hasn't passed
+        // ✅ CHECK 2: Skip if end time has already passed
         bool isStillRunning = false;
 
         if (endTimeString != null && endTimeString.isNotEmpty) {
@@ -303,7 +338,7 @@ class _RunningJobsPageState extends State<RunningJobsPage> {
           }
         }
 
-        // ✅ ADD TO ACTIVE JOBS
+        // ✅ ADD TO ACTIVE JOBS ONLY IF STILL RUNNING
         if (isStillRunning) {
           activeJobs.add(job);
           debugPrint('   ✅✅ ADDED TO ACTIVE JOBS LIST ✅✅');
@@ -471,12 +506,12 @@ class _RunningJobsPageState extends State<RunningJobsPage> {
     final totalJobs = _runningJobsList.length + _recentlyCompletedJobs.length;
 
     return Scaffold(
-      backgroundColor: Colors.grey[50],
+      backgroundColor: const Color(0xFFFAFAFA),
       appBar: AppBar(
-        backgroundColor: Colors.white,
+        backgroundColor: const Color(0xFFFFFFFF),
         elevation: 0,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: Colors.black),
+          icon: const Icon(Icons.arrow_back, color: Color(0xFF000000)),
           onPressed: () {
             _progressTimer?.cancel();
             _apiRefreshTimer?.cancel();
@@ -492,7 +527,7 @@ class _RunningJobsPageState extends State<RunningJobsPage> {
           style: TextStyle(
             fontSize: 18,
             fontWeight: FontWeight.w600,
-            color: Colors.black,
+            color: Color(0xFF000000),
           ),
         ),
         bottom: totalJobs > 0 && !_isLoading
@@ -503,7 +538,10 @@ class _RunningJobsPageState extends State<RunningJobsPage> {
                   padding: const EdgeInsets.only(left: 56, bottom: 8),
                   child: Text(
                     '${_runningJobsList.length} active • ${_recentlyCompletedJobs.length} recently completed',
-                    style: TextStyle(fontSize: 13, color: Colors.grey[600]),
+                    style: const TextStyle(
+                      fontSize: 13,
+                      color: Color(0xFF757575),
+                    ),
                   ),
                 ),
               )
@@ -524,14 +562,14 @@ class _RunningJobsPageState extends State<RunningJobsPage> {
             else ...[
               // Active Jobs Section
               if (_runningJobsList.isNotEmpty) ...[
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 12),
+                const Padding(
+                  padding: EdgeInsets.only(bottom: 12),
                   child: Text(
                     'Active Jobs',
                     style: TextStyle(
                       fontSize: 16,
                       fontWeight: FontWeight.w700,
-                      color: Colors.grey[800],
+                      color: Color(0xFF424242),
                     ),
                   ),
                 ),
@@ -552,12 +590,12 @@ class _RunningJobsPageState extends State<RunningJobsPage> {
                   ),
                   child: Row(
                     children: [
-                      Text(
+                      const Text(
                         'Recently Completed',
                         style: TextStyle(
                           fontSize: 16,
                           fontWeight: FontWeight.w700,
-                          color: Colors.grey[800],
+                          color: Color(0xFF424242),
                         ),
                       ),
                       const SizedBox(width: 8),
@@ -567,15 +605,15 @@ class _RunningJobsPageState extends State<RunningJobsPage> {
                           vertical: 2,
                         ),
                         decoration: BoxDecoration(
-                          color: Colors.green[50],
+                          color: const Color(0xFFE8F5E9),
                           borderRadius: BorderRadius.circular(10),
                         ),
-                        child: Text(
+                        child: const Text(
                           'Last 5 min',
                           style: TextStyle(
                             fontSize: 11,
                             fontWeight: FontWeight.w600,
-                            color: Colors.green[700],
+                            color: Color(0xFF388E3C),
                           ),
                         ),
                       ),
@@ -600,11 +638,11 @@ class _RunningJobsPageState extends State<RunningJobsPage> {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: const Color(0xFFFFFFFF),
         borderRadius: BorderRadius.circular(12),
         boxShadow: [
           BoxShadow(
-            color: Colors.grey.withOpacity(0.1),
+            color: const Color(0xFF9E9E9E).withOpacity(0.1),
             blurRadius: 10,
             offset: const Offset(0, 2),
           ),
@@ -623,12 +661,12 @@ class _RunningJobsPageState extends State<RunningJobsPage> {
     return Container(
       padding: const EdgeInsets.all(24),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: const Color(0xFFFFFFFF),
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.red.withOpacity(0.2)),
+        border: Border.all(color: const Color(0xFFF44336).withOpacity(0.2)),
         boxShadow: [
           BoxShadow(
-            color: Colors.grey.withOpacity(0.1),
+            color: const Color(0xFF9E9E9E).withOpacity(0.1),
             blurRadius: 10,
             offset: const Offset(0, 2),
           ),
@@ -636,13 +674,13 @@ class _RunningJobsPageState extends State<RunningJobsPage> {
       ),
       child: Column(
         children: [
-          Icon(Icons.error_outline, size: 48, color: Colors.red[300]),
+          const Icon(Icons.error_outline, size: 48, color: Color(0xFFE57373)),
           const SizedBox(height: 16),
           Text(
             _errorMessage,
-            style: TextStyle(
+            style: const TextStyle(
               fontSize: 14,
-              color: Colors.grey[700],
+              color: Color(0xFF616161),
               fontWeight: FontWeight.w500,
             ),
             textAlign: TextAlign.center,
@@ -653,8 +691,8 @@ class _RunningJobsPageState extends State<RunningJobsPage> {
             icon: const Icon(Icons.refresh, size: 18),
             label: const Text('Retry'),
             style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.blue,
-              foregroundColor: Colors.white,
+              backgroundColor: const Color(0xFF2196F3),
+              foregroundColor: const Color(0xFFFFFFFF),
               padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(8),
@@ -695,14 +733,14 @@ class _RunningJobsPageState extends State<RunningJobsPage> {
       child: Container(
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
-          color: Colors.white,
+          color: const Color(0xFFFFFFFF),
           borderRadius: BorderRadius.circular(12),
           border: isActive
               ? null
-              : Border.all(color: Colors.green.withOpacity(0.3)),
+              : Border.all(color: const Color(0xFF4CAF50).withOpacity(0.3)),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(0.05),
+              color: const Color(0xFF000000).withOpacity(0.05),
               blurRadius: 8,
               offset: const Offset(0, 2),
             ),
@@ -720,12 +758,12 @@ class _RunningJobsPageState extends State<RunningJobsPage> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
+                      const Text(
                         'Hub Name',
                         style: TextStyle(
                           fontSize: 12,
                           fontWeight: FontWeight.w500,
-                          color: Colors.grey[600],
+                          color: Color(0xFF757575),
                         ),
                       ),
                       const SizedBox(height: 4),
@@ -734,7 +772,7 @@ class _RunningJobsPageState extends State<RunningJobsPage> {
                         style: const TextStyle(
                           fontSize: 14,
                           fontWeight: FontWeight.w600,
-                          color: Colors.black87,
+                          color: Color(0xDE000000),
                         ),
                       ),
                     ],
@@ -743,12 +781,12 @@ class _RunningJobsPageState extends State<RunningJobsPage> {
                 Column(
                   crossAxisAlignment: CrossAxisAlignment.end,
                   children: [
-                    Text(
+                    const Text(
                       'Machine Name',
                       style: TextStyle(
                         fontSize: 12,
                         fontWeight: FontWeight.w500,
-                        color: Colors.grey[600],
+                        color: Color(0xFF757575),
                       ),
                     ),
                     const SizedBox(height: 4),
@@ -757,7 +795,7 @@ class _RunningJobsPageState extends State<RunningJobsPage> {
                       style: const TextStyle(
                         fontSize: 14,
                         fontWeight: FontWeight.w600,
-                        color: Colors.black87,
+                        color: Color(0xDE000000),
                       ),
                     ),
                   ],
@@ -776,12 +814,12 @@ class _RunningJobsPageState extends State<RunningJobsPage> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
+                      const Text(
                         'Status',
                         style: TextStyle(
                           fontSize: 12,
                           fontWeight: FontWeight.w500,
-                          color: Colors.grey[600],
+                          color: Color(0xFF757575),
                         ),
                       ),
                       const SizedBox(height: 6),
@@ -809,20 +847,20 @@ class _RunningJobsPageState extends State<RunningJobsPage> {
                           ),
                         ),
                       ] else ...[
-                        Row(
+                        const Row(
                           children: [
                             Icon(
                               Icons.check_circle,
                               size: 16,
-                              color: Colors.green[600],
+                              color: Color(0xFF43A047),
                             ),
-                            const SizedBox(width: 6),
-                            const Text(
+                            SizedBox(width: 6),
+                            Text(
                               'Completed',
                               style: TextStyle(
                                 fontSize: 13,
                                 fontWeight: FontWeight.w600,
-                                color: Colors.green,
+                                color: Color(0xFF4CAF50),
                               ),
                             ),
                           ],
@@ -831,18 +869,16 @@ class _RunningJobsPageState extends State<RunningJobsPage> {
                     ],
                   ),
                 ),
-
                 const SizedBox(width: 24),
-
                 Column(
                   crossAxisAlignment: CrossAxisAlignment.end,
                   children: [
-                    Text(
+                    const Text(
                       'End time',
                       style: TextStyle(
                         fontSize: 12,
                         fontWeight: FontWeight.w500,
-                        color: Colors.grey[600],
+                        color: Color(0xFF757575),
                       ),
                     ),
                     const SizedBox(height: 4),
@@ -851,7 +887,7 @@ class _RunningJobsPageState extends State<RunningJobsPage> {
                       style: const TextStyle(
                         fontSize: 14,
                         fontWeight: FontWeight.w600,
-                        color: Colors.black87,
+                        color: Color(0xDE000000),
                       ),
                     ),
                   ],
@@ -868,36 +904,36 @@ class _RunningJobsPageState extends State<RunningJobsPage> {
     return Container(
       padding: const EdgeInsets.all(32),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: const Color(0xFFFFFFFF),
         borderRadius: BorderRadius.circular(12),
         boxShadow: [
           BoxShadow(
-            color: Colors.grey.withOpacity(0.1),
+            color: const Color(0xFF9E9E9E).withOpacity(0.1),
             blurRadius: 10,
             offset: const Offset(0, 2),
           ),
         ],
       ),
-      child: Column(
+      child: const Column(
         children: [
           Icon(
             Icons.local_laundry_service_outlined,
             size: 64,
-            color: Colors.grey[300],
+            color: Color(0xFFE0E0E0),
           ),
-          const SizedBox(height: 16),
+          SizedBox(height: 16),
           Text(
             'No running jobs',
             style: TextStyle(
               fontSize: 16,
               fontWeight: FontWeight.w600,
-              color: Colors.grey[700],
+              color: Color(0xFF616161),
             ),
           ),
-          const SizedBox(height: 8),
+          SizedBox(height: 8),
           Text(
             'Scan QR code to start a wash',
-            style: TextStyle(fontSize: 14, color: Colors.grey[500]),
+            style: TextStyle(fontSize: 14, color: Color(0xFF9E9E9E)),
           ),
         ],
       ),

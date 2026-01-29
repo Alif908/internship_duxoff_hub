@@ -564,9 +564,9 @@ class _HomePageState extends State<HomePage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.grey[50],
+      backgroundColor: const Color(0xFFFAFAFA),
       appBar: AppBar(
-        backgroundColor: Colors.white,
+        backgroundColor: const Color(0xFFFFFFFF),
         elevation: 0,
         automaticallyImplyLeading: false,
         title: const Text(
@@ -574,12 +574,15 @@ class _HomePageState extends State<HomePage> {
           style: TextStyle(
             fontSize: 24,
             fontWeight: FontWeight.bold,
-            color: Colors.blue,
+            color: Color(0xFF2196F3),
           ),
         ),
         actions: [
           IconButton(
-            icon: const Icon(Icons.notifications_outlined, color: Colors.black),
+            icon: const Icon(
+              Icons.notifications_outlined,
+              color: Color(0xFF000000),
+            ),
             onPressed: () {
               Navigator.push(
                 context,
@@ -588,7 +591,10 @@ class _HomePageState extends State<HomePage> {
             },
           ),
           IconButton(
-            icon: const Icon(Icons.card_giftcard_outlined, color: Colors.black),
+            icon: const Icon(
+              Icons.card_giftcard_outlined,
+              color: Color(0xFF000000),
+            ),
             onPressed: () {
               ScaffoldMessenger.of(context).showSnackBar(
                 const SnackBar(content: Text('Rewards coming soon!')),
@@ -644,8 +650,8 @@ class _HomePageState extends State<HomePage> {
             return Container(
               height: 160,
               decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  colors: [Colors.blue[400]!, Colors.blue[600]!],
+                gradient: const LinearGradient(
+                  colors: [Color(0xFF42A5F5), Color(0xFF1E88E5)],
                   begin: Alignment.topLeft,
                   end: Alignment.bottomRight,
                 ),
@@ -657,7 +663,7 @@ class _HomePageState extends State<HomePage> {
                   style: TextStyle(
                     fontSize: 32,
                     fontWeight: FontWeight.bold,
-                    color: Colors.white,
+                    color: Color(0xFFFFFFFF),
                   ),
                 ),
               ),
@@ -676,7 +682,7 @@ class _HomePageState extends State<HomePage> {
         style: const TextStyle(
           fontSize: 18,
           fontWeight: FontWeight.bold,
-          color: Colors.black,
+          color: Color(0xFF000000),
         ),
       ),
     );
@@ -686,11 +692,11 @@ class _HomePageState extends State<HomePage> {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: const Color(0xFFFFFFFF),
         borderRadius: BorderRadius.circular(12),
         boxShadow: [
           BoxShadow(
-            color: Colors.grey.withOpacity(0.1),
+            color: const Color(0xFF9E9E9E).withOpacity(0.1),
             blurRadius: 10,
             offset: const Offset(0, 2),
           ),
@@ -709,11 +715,11 @@ class _HomePageState extends State<HomePage> {
     return Container(
       padding: const EdgeInsets.all(24),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: const Color(0xFFFFFFFF),
         borderRadius: BorderRadius.circular(12),
         boxShadow: [
           BoxShadow(
-            color: Colors.grey.withOpacity(0.1),
+            color: const Color(0xFF9E9E9E).withOpacity(0.1),
             blurRadius: 10,
             offset: const Offset(0, 2),
           ),
@@ -721,11 +727,11 @@ class _HomePageState extends State<HomePage> {
       ),
       child: Column(
         children: [
-          Icon(Icons.error_outline, size: 48, color: Colors.red[300]),
+          const Icon(Icons.error_outline, size: 48, color: Color(0xFFE57373)),
           const SizedBox(height: 16),
           Text(
             message,
-            style: TextStyle(fontSize: 14, color: Colors.grey[600]),
+            style: const TextStyle(fontSize: 14, color: Color(0xFF757575)),
             textAlign: TextAlign.center,
           ),
           const SizedBox(height: 16),
@@ -734,8 +740,8 @@ class _HomePageState extends State<HomePage> {
             icon: const Icon(Icons.refresh, size: 18),
             label: const Text('Retry'),
             style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.blue,
-              foregroundColor: Colors.white,
+              backgroundColor: const Color(0xFF2196F3),
+              foregroundColor: const Color(0xFFFFFFFF),
               padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
             ),
           ),
@@ -772,11 +778,11 @@ class _HomePageState extends State<HomePage> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: const Color(0xFFFFFFFF),
         borderRadius: BorderRadius.circular(12),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.06),
+            color: const Color(0xFF000000).withOpacity(0.06),
             blurRadius: 10,
             offset: const Offset(0, 2),
           ),
@@ -798,16 +804,16 @@ class _HomePageState extends State<HomePage> {
                       style: TextStyle(
                         fontSize: 12,
                         fontWeight: FontWeight.w600,
-                        color: Colors.black87,
+                        color: Color(0xDE000000),
                       ),
                     ),
                     const SizedBox(height: 3),
                     Text(
                       hubName.toLowerCase(),
-                      style: TextStyle(
+                      style: const TextStyle(
                         fontSize: 11,
                         fontWeight: FontWeight.w400,
-                        color: Colors.grey[600],
+                        color: Color(0xFF757575),
                       ),
                     ),
                   ],
@@ -822,16 +828,16 @@ class _HomePageState extends State<HomePage> {
                     style: TextStyle(
                       fontSize: 12,
                       fontWeight: FontWeight.w600,
-                      color: Colors.black87,
+                      color: Color(0xDE000000),
                     ),
                   ),
                   const SizedBox(height: 3),
                   Text(
                     machineId,
-                    style: TextStyle(
+                    style: const TextStyle(
                       fontSize: 11,
                       fontWeight: FontWeight.w400,
-                      color: Colors.grey[600],
+                      color: Color(0xFF757575),
                     ),
                   ),
                 ],
@@ -852,7 +858,7 @@ class _HomePageState extends State<HomePage> {
                       style: TextStyle(
                         fontSize: 12,
                         fontWeight: FontWeight.w600,
-                        color: Colors.black87,
+                        color: Color(0xDE000000),
                       ),
                     ),
                     const SizedBox(height: 3),
@@ -888,16 +894,16 @@ class _HomePageState extends State<HomePage> {
                     style: TextStyle(
                       fontSize: 12,
                       fontWeight: FontWeight.w600,
-                      color: Colors.black87,
+                      color: Color(0xDE000000),
                     ),
                   ),
                   const SizedBox(height: 3),
                   Text(
                     endTime,
-                    style: TextStyle(
+                    style: const TextStyle(
                       fontSize: 11,
                       fontWeight: FontWeight.w400,
-                      color: Colors.grey[600],
+                      color: Color(0xFF757575),
                     ),
                   ),
                 ],
@@ -913,17 +919,17 @@ class _HomePageState extends State<HomePage> {
     return Container(
       padding: const EdgeInsets.all(32),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: const Color(0xFFFFFFFF),
         borderRadius: BorderRadius.circular(12),
         boxShadow: [
           BoxShadow(
-            color: Colors.grey.withOpacity(0.1),
+            color: const Color(0xFF9E9E9E).withOpacity(0.1),
             blurRadius: 10,
             offset: const Offset(0, 2),
           ),
         ],
       ),
-      child: Row(
+      child: const Row(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           Column(
@@ -931,21 +937,21 @@ class _HomePageState extends State<HomePage> {
               Icon(
                 Icons.local_laundry_service_outlined,
                 size: 48,
-                color: Colors.grey[400],
+                color: Color(0xFFBDBDBD),
               ),
-              const SizedBox(height: 16),
+              SizedBox(height: 16),
               Text(
                 'No running jobs',
                 style: TextStyle(
                   fontSize: 16,
                   fontWeight: FontWeight.w600,
-                  color: Colors.grey[700],
+                  color: Color(0xFF616161),
                 ),
               ),
-              const SizedBox(height: 8),
+              SizedBox(height: 8),
               Text(
                 'Scan QR code to start a wash',
-                style: TextStyle(fontSize: 14, color: Colors.grey[500]),
+                style: TextStyle(fontSize: 14, color: Color(0xFF9E9E9E)),
               ),
             ],
           ),
@@ -957,9 +963,9 @@ class _HomePageState extends State<HomePage> {
   Widget _buildHistorySection() {
     return Column(
       children: [
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16),
-          child: const Row(
+        const Padding(
+          padding: EdgeInsets.symmetric(horizontal: 16),
+          child: Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Text(
@@ -967,7 +973,7 @@ class _HomePageState extends State<HomePage> {
                 style: TextStyle(
                   fontSize: 18,
                   fontWeight: FontWeight.bold,
-                  color: Colors.black,
+                  color: Color(0xFF000000),
                 ),
               ),
             ],
@@ -1002,32 +1008,32 @@ class _HomePageState extends State<HomePage> {
     return Container(
       padding: const EdgeInsets.all(32),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: const Color(0xFFFFFFFF),
         borderRadius: BorderRadius.circular(12),
         boxShadow: [
           BoxShadow(
-            color: Colors.grey.withOpacity(0.1),
+            color: const Color(0xFF9E9E9E).withOpacity(0.1),
             blurRadius: 10,
             offset: const Offset(0, 2),
           ),
         ],
       ),
-      child: Column(
+      child: const Column(
         children: [
-          Icon(Icons.history, size: 48, color: Colors.grey[400]),
-          const SizedBox(height: 16),
+          Icon(Icons.history, size: 48, color: Color(0xFFBDBDBD)),
+          SizedBox(height: 16),
           Text(
             'No wash history',
             style: TextStyle(
               fontSize: 16,
               fontWeight: FontWeight.w600,
-              color: Colors.grey[700],
+              color: Color(0xFF616161),
             ),
           ),
-          const SizedBox(height: 8),
+          SizedBox(height: 8),
           Text(
             'Your completed washes will appear here',
-            style: TextStyle(fontSize: 14, color: Colors.grey[500]),
+            style: TextStyle(fontSize: 14, color: Color(0xFF9E9E9E)),
           ),
         ],
       ),
@@ -1042,7 +1048,7 @@ class _HomePageState extends State<HomePage> {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Hub information not available'),
-          backgroundColor: Colors.red,
+          backgroundColor: Color(0xFFF44336),
         ),
       );
       return;
@@ -1089,7 +1095,7 @@ class _HomePageState extends State<HomePage> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('Failed to load hub details: ${e.toString()}'),
-          backgroundColor: Colors.red,
+          backgroundColor: const Color(0xFFF44336),
         ),
       );
     }
@@ -1111,11 +1117,11 @@ class _HomePageState extends State<HomePage> {
         child: Container(
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
-            color: Colors.white,
+            color: const Color(0xFFFFFFFF),
             borderRadius: BorderRadius.circular(12),
             boxShadow: [
               BoxShadow(
-                color: Colors.grey.withOpacity(0.1),
+                color: const Color(0xFF9E9E9E).withOpacity(0.1),
                 blurRadius: 10,
                 offset: const Offset(0, 2),
               ),
@@ -1136,15 +1142,15 @@ class _HomePageState extends State<HomePage> {
                           style: TextStyle(
                             fontSize: 12,
                             fontWeight: FontWeight.w600,
-                            color: Colors.black87,
+                            color: Color(0xDE000000),
                           ),
                         ),
                         const SizedBox(height: 4),
                         Text(
                           hubName,
-                          style: TextStyle(
+                          style: const TextStyle(
                             fontSize: 13,
-                            color: Colors.grey[600],
+                            color: Color(0xFF757575),
                           ),
                           overflow: TextOverflow.ellipsis,
                         ),
@@ -1160,13 +1166,16 @@ class _HomePageState extends State<HomePage> {
                         style: TextStyle(
                           fontSize: 12,
                           fontWeight: FontWeight.w600,
-                          color: Colors.black87,
+                          color: Color(0xDE000000),
                         ),
                       ),
                       const SizedBox(height: 4),
                       Text(
                         '$deviceType #$deviceId',
-                        style: TextStyle(fontSize: 13, color: Colors.grey[600]),
+                        style: const TextStyle(
+                          fontSize: 13,
+                          color: Color(0xFF757575),
+                        ),
                       ),
                     ],
                   ),
@@ -1177,14 +1186,14 @@ class _HomePageState extends State<HomePage> {
                       vertical: 6,
                     ),
                     decoration: BoxDecoration(
-                      color: Colors.green,
+                      color: const Color(0xFF4CAF50),
                       borderRadius: BorderRadius.circular(6),
                     ),
                     child: const Text(
                       'Completed',
                       style: TextStyle(
                         fontSize: 11,
-                        color: Colors.white,
+                        color: Color(0xFFFFFFFF),
                         fontWeight: FontWeight.w500,
                       ),
                     ),
@@ -1197,7 +1206,10 @@ class _HomePageState extends State<HomePage> {
                 children: [
                   Text(
                     endTime.isNotEmpty ? _formatDateTime(endTime) : 'N/A',
-                    style: TextStyle(fontSize: 12, color: Colors.grey[500]),
+                    style: const TextStyle(
+                      fontSize: 12,
+                      color: Color(0xFF9E9E9E),
+                    ),
                   ),
                   Row(
                     children: [
@@ -1205,16 +1217,16 @@ class _HomePageState extends State<HomePage> {
                         'QK WASH',
                         style: TextStyle(
                           fontSize: 11,
-                          color: Colors.blue,
+                          color: Color(0xFF2196F3),
                           fontWeight: FontWeight.w600,
                         ),
                       ),
                       const SizedBox(width: 8),
                       Text(
                         '₹$amount',
-                        style: TextStyle(
+                        style: const TextStyle(
                           fontSize: 13,
-                          color: Colors.grey[800],
+                          color: Color(0xFF424242),
                           fontWeight: FontWeight.w600,
                         ),
                       ),

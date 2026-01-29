@@ -8,12 +8,12 @@ class AboutUsPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.white,
+      backgroundColor: const Color(0xFFFFFFFF),
       appBar: AppBar(
-        backgroundColor: Colors.white,
+        backgroundColor: const Color(0xFFFFFFFF),
         elevation: 0,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: Colors.black),
+          icon: const Icon(Icons.arrow_back, color: Color(0xFF000000)),
           onPressed: () => Navigator.pushReplacement(
             context,
             MaterialPageRoute(builder: (context) => SettingsPage()),
@@ -42,12 +42,12 @@ class AboutUsPage extends StatelessWidget {
                 'Thank you for choosing us.',
                 style: TextStyle(
                   fontSize: 14,
-                  color: Colors.black87,
+                  color: Color(0xDE000000),
                   height: 1.6,
                 ),
               ),
-              SizedBox(height: 24),
-              Text(
+              const SizedBox(height: 24),
+              const Text(
                 'Terms of service and Privacy policy',
                 style: TextStyle(
                   fontSize: 24,
@@ -99,9 +99,11 @@ class AboutUsPage extends StatelessWidget {
   Widget _buildParagraph(String text) {
     return Text(
       text,
-      style: const TextStyle(fontSize: 14, color: Colors.black87, height: 1.6),
+      style: const TextStyle(
+        fontSize: 14,
+        color: Color(0xDE000000),
+        height: 1.6,
+      ),
     );
   }
 }
-
-

@@ -24,10 +24,10 @@ class _QKWashHomeState extends State<QKWashHome> {
     super.initState();
     _selectedScreen = widget.initialTabIndex;
     _screens = [
-      const HomePage(),
-      const WashHistoryPage(),
-      const RunningJobsPage(),
-      const SettingsPage(),
+       HomePage(),
+       WashHistoryPage(),
+       RunningJobsPage(),
+       SettingsPage(),
     ];
   }
 
@@ -56,11 +56,15 @@ class _QKWashHomeState extends State<QKWashHome> {
       body: IndexedStack(index: _selectedScreen, children: _screens),
 
       floatingActionButton: FloatingActionButton(
-        backgroundColor: Colors.black,
+        backgroundColor: Color(0xFF000000),
         elevation: 4,
         shape: const CircleBorder(),
         onPressed: _navigateToQRScanner,
-        child: const Icon(Icons.qr_code_scanner, color: Colors.white, size: 32),
+        child: const Icon(
+          Icons.qr_code_scanner,
+          color: Color(0xFFFFFFFF),
+          size: 32,
+        ),
       ),
 
       floatingActionButtonLocation: FloatingActionButtonLocation.centerDocked,
@@ -123,7 +127,7 @@ class _QKWashHomeState extends State<QKWashHome> {
             Icon(
               isSelected ? selectedIcon : icon,
               size: 28,
-              color: isSelected ? Colors.blue : Colors.grey[600],
+              color: isSelected ? Color(0xFF2196F3) : Color(0xFF757575),
             ),
             const SizedBox(height: 4),
             Text(
@@ -131,7 +135,7 @@ class _QKWashHomeState extends State<QKWashHome> {
               style: TextStyle(
                 fontSize: 11,
                 fontWeight: isSelected ? FontWeight.w600 : FontWeight.w400,
-                color: isSelected ? Colors.blue : Colors.grey[600],
+                color: isSelected ? Color(0xFF2196F3) : Color(0xFF757575),
               ),
             ),
           ],

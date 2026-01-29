@@ -156,15 +156,13 @@ class _WashHistoryPageState extends State<WashHistoryPage> {
 
         final uniqueKey = '${deviceId}_$normalizedEndTime';
 
-        final currentAmount =
-            double.tryParse(
+        final currentAmount = double.tryParse(
               (apiItem['booked_user_amount'] ?? '0').toString(),
             ) ??
             0.0;
 
         if (uniqueBookings.containsKey(uniqueKey)) {
-          final existingAmount =
-              double.tryParse(
+          final existingAmount = double.tryParse(
                 (uniqueBookings[uniqueKey]!['booked_user_amount'] ?? '0')
                     .toString(),
               ) ??
@@ -207,7 +205,7 @@ class _WashHistoryPageState extends State<WashHistoryPage> {
           if (matchingLocal != null) {
             final localAmount =
                 double.tryParse((matchingLocal['amount'] ?? '0').toString()) ??
-                0.0;
+                    0.0;
             if (localAmount > 0) {
               apiItem['booked_user_amount'] = localAmount;
               debugPrint('✅ Using local amount ₹$localAmount for $uniqueKey');
@@ -295,11 +293,9 @@ class _WashHistoryPageState extends State<WashHistoryPage> {
       });
 
       debugPrint('========== FINAL RESULTS ==========');
-      for (
-        int i = 0;
-        i < (mergedHistory.length > 3 ? 3 : mergedHistory.length);
-        i++
-      ) {
+      for (int i = 0;
+          i < (mergedHistory.length > 3 ? 3 : mergedHistory.length);
+          i++) {
         final item = mergedHistory[i];
         debugPrint(
           '  [$i] Device: ${item['deviceid']}, Amount: ₹${item['booked_user_amount']}, Time: ${item['device_booked_user_end_time'] ?? item['endtime']}',
@@ -388,8 +384,7 @@ class _WashHistoryPageState extends State<WashHistoryPage> {
           final deviceId = booking['deviceid']?.toString() ?? '';
           final query = _searchQuery.toLowerCase();
 
-          matchesFilter =
-              matchesFilter &&
+          matchesFilter = matchesFilter &&
               (hubName.contains(query) || deviceId.contains(query));
         }
 
@@ -449,7 +444,7 @@ class _WashHistoryPageState extends State<WashHistoryPage> {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Hub information not available'),
-          backgroundColor: Colors.red,
+          backgroundColor: Color(0xFFF44336),
           duration: Duration(seconds: 2),
         ),
       );
@@ -504,11 +499,11 @@ class _WashHistoryPageState extends State<WashHistoryPage> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('Failed to load hub: ${e.toString()}'),
-          backgroundColor: Colors.red,
+          backgroundColor: const Color(0xFFF44336),
           duration: const Duration(seconds: 3),
           action: SnackBarAction(
             label: 'Retry',
-            textColor: Colors.white,
+            textColor: const Color(0xFFFFFFFF),
             onPressed: () => _navigateToHub(booking),
           ),
         ),
@@ -521,22 +516,22 @@ class _WashHistoryPageState extends State<WashHistoryPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.grey[50],
+      backgroundColor: const Color(0xFFFAFAFA),
       appBar: AppBar(
         title: const Text(
           'History',
           style: TextStyle(
             fontWeight: FontWeight.w700,
-            color: Colors.black87,
+            color: Color(0xDE000000),
             fontSize: 24,
           ),
         ),
-        backgroundColor: Colors.grey[50],
+        backgroundColor: const Color(0xFFFAFAFA),
         elevation: 0,
         automaticallyImplyLeading: false,
         actions: [
           IconButton(
-            icon: const Icon(Icons.filter_list, color: Colors.black87),
+            icon: const Icon(Icons.filter_list, color: Color(0xDE000000)),
             onPressed: () {},
           ),
         ],
@@ -580,8 +575,7 @@ class _WashHistoryPageState extends State<WashHistoryPage> {
     final hubName = booking['hubname']?.toString() ?? 'Unknown Hub';
     final hubId = booking['hubid']?.toString() ?? '';
     final deviceId = booking['deviceid']?.toString() ?? 'N/A';
-    final endTime =
-        booking['device_booked_user_end_time']?.toString() ??
+    final endTime = booking['device_booked_user_end_time']?.toString() ??
         booking['endtime']?.toString() ??
         '';
 
@@ -600,7 +594,7 @@ class _WashHistoryPageState extends State<WashHistoryPage> {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
               content: Text('Hub information not available'),
-              backgroundColor: Colors.red,
+              backgroundColor: Color(0xFFF44336),
               duration: Duration(seconds: 2),
             ),
           );
@@ -612,11 +606,11 @@ class _WashHistoryPageState extends State<WashHistoryPage> {
         margin: const EdgeInsets.only(bottom: 16),
         padding: const EdgeInsets.all(20),
         decoration: BoxDecoration(
-          color: Colors.white,
+          color: const Color(0xFFFFFFFF),
           borderRadius: BorderRadius.circular(12),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(0.04),
+              color: const Color(0xFF000000).withOpacity(0.04),
               blurRadius: 10,
               offset: const Offset(0, 2),
             ),
@@ -639,15 +633,15 @@ class _WashHistoryPageState extends State<WashHistoryPage> {
                         style: TextStyle(
                           fontSize: 14,
                           fontWeight: FontWeight.w600,
-                          color: Colors.black87,
+                          color: Color(0xDE000000),
                         ),
                       ),
                       const SizedBox(height: 6),
                       Text(
                         hubName.toLowerCase(),
-                        style: TextStyle(
+                        style: const TextStyle(
                           fontSize: 14,
-                          color: Colors.grey[700],
+                          color: Color(0xFF616161),
                           fontWeight: FontWeight.w400,
                         ),
                       ),
@@ -664,15 +658,15 @@ class _WashHistoryPageState extends State<WashHistoryPage> {
                         style: TextStyle(
                           fontSize: 14,
                           fontWeight: FontWeight.w600,
-                          color: Colors.black87,
+                          color: Color(0xDE000000),
                         ),
                       ),
                       const SizedBox(height: 6),
                       Text(
                         '#$deviceId',
-                        style: TextStyle(
+                        style: const TextStyle(
                           fontSize: 14,
-                          color: Colors.grey[700],
+                          color: Color(0xFF616161),
                           fontWeight: FontWeight.w400,
                         ),
                       ),
@@ -693,7 +687,7 @@ class _WashHistoryPageState extends State<WashHistoryPage> {
                     style: TextStyle(
                       fontSize: 12,
                       fontWeight: FontWeight.w600,
-                      color: Colors.white,
+                      color: Color(0xFFFFFFFF),
                     ),
                   ),
                 ),
@@ -710,27 +704,27 @@ class _WashHistoryPageState extends State<WashHistoryPage> {
                     children: [
                       Text(
                         endTime.isNotEmpty ? _formatDateTime(endTime) : 'N/A',
-                        style: TextStyle(
+                        style: const TextStyle(
                           fontSize: 13,
-                          color: Colors.grey[600],
+                          color: Color(0xFF757575),
                           fontWeight: FontWeight.w400,
                         ),
                       ),
                       if (hubId.isNotEmpty) ...[
                         const SizedBox(height: 4),
-                        Row(
+                        const Row(
                           children: [
                             Icon(
                               Icons.touch_app,
                               size: 14,
-                              color: Colors.blue[700],
+                              color: Color(0xFF1976D2),
                             ),
-                            const SizedBox(width: 4),
+                            SizedBox(width: 4),
                             Text(
                               'Tap to view hub',
                               style: TextStyle(
                                 fontSize: 11,
-                                color: Colors.blue[700],
+                                color: Color(0xFF1976D2),
                                 fontWeight: FontWeight.w500,
                               ),
                             ),
@@ -758,7 +752,7 @@ class _WashHistoryPageState extends State<WashHistoryPage> {
                       style: const TextStyle(
                         fontSize: 18,
                         fontWeight: FontWeight.w700,
-                        color: Colors.black87,
+                        color: Color(0xDE000000),
                       ),
                     ),
                   ],
@@ -778,13 +772,13 @@ class _WashHistoryPageState extends State<WashHistoryPage> {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(Icons.error_outline, size: 64, color: Colors.red[300]),
+            const Icon(Icons.error_outline, size: 64, color: Color(0xFFE57373)),
             const SizedBox(height: 16),
             Text(
               _errorMessage,
-              style: TextStyle(
+              style: const TextStyle(
                 fontSize: 16,
-                color: Colors.grey[700],
+                color: Color(0xFF616161),
                 fontWeight: FontWeight.w500,
               ),
               textAlign: TextAlign.center,
@@ -796,7 +790,7 @@ class _WashHistoryPageState extends State<WashHistoryPage> {
               label: const Text('Retry'),
               style: ElevatedButton.styleFrom(
                 backgroundColor: const Color(0xFF4A90E2),
-                foregroundColor: Colors.white,
+                foregroundColor: const Color(0xFFFFFFFF),
                 padding: const EdgeInsets.symmetric(
                   horizontal: 24,
                   vertical: 12,
@@ -813,24 +807,24 @@ class _WashHistoryPageState extends State<WashHistoryPage> {
   }
 
   Widget _buildEmptyState() {
-    return Center(
+    return const Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(Icons.history, size: 80, color: Colors.grey[300]),
-          const SizedBox(height: 16),
+          Icon(Icons.history, size: 80, color: Color(0xFFE0E0E0)),
+          SizedBox(height: 16),
           Text(
             'No wash history yet',
             style: TextStyle(
               fontSize: 18,
               fontWeight: FontWeight.w500,
-              color: Colors.grey[600],
+              color: Color(0xFF757575),
             ),
           ),
-          const SizedBox(height: 8),
+          SizedBox(height: 8),
           Text(
             'Your completed bookings will appear here',
-            style: TextStyle(fontSize: 14, color: Colors.grey[500]),
+            style: TextStyle(fontSize: 14, color: Color(0xFF9E9E9E)),
           ),
         ],
       ),

@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+
 import 'package:internship_duxoff_hub/services/home_api_service.dart';
 import 'package:internship_duxoff_hub/views/home%20screen/settings%20page/contact_us_page.dart';
 import 'package:internship_duxoff_hub/views/home%20screen/settings%20page/profile_page.dart';
@@ -55,9 +56,8 @@ class _SettingsPageState extends State<SettingsPage> {
         final profileData = await HomeApi.getUserProfile();
 
         setState(() {
-          _userName = (profileData['username'] ?? _userName)
-              .toString()
-              .toUpperCase();
+          _userName =
+              (profileData['username'] ?? _userName).toString().toUpperCase();
           _userMobile = profileData['usermobile'] ?? _userMobile;
           _totalWashes = profileData['numberofWashes'] ?? 0;
           _totalDryings = profileData['numberofDryers'] ?? 0;
@@ -276,7 +276,6 @@ class _SettingsPageState extends State<SettingsPage> {
               ],
             ),
           ),
-
           Container(
             height: 52,
             width: double.infinity,

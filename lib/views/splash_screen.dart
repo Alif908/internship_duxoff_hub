@@ -144,7 +144,7 @@ class _SplashScreenState extends State<SplashScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.black,
+      backgroundColor: Color(0xFF000000),
       body: _isVideoInitialized
           ? Stack(
               children: [

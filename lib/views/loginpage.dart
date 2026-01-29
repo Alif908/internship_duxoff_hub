@@ -29,7 +29,6 @@ class _LoginPageState extends State<LoginPage> {
     _checkExistingUser();
   }
 
-  
   Future<void> _checkExistingUser() async {
     try {
       final prefs = await SharedPreferences.getInstance();
@@ -49,7 +48,6 @@ class _LoginPageState extends State<LoginPage> {
     }
   }
 
-  
   String? _validateName(String? value) {
     if (value == null || value.trim().isEmpty) {
       return 'Please enter your name';
@@ -77,10 +75,8 @@ class _LoginPageState extends State<LoginPage> {
   }
 
   Future<void> _handleContinue() async {
-    
     FocusScope.of(context).unfocus();
 
-    
     final nameError = _validateName(_nameController.text);
     final mobileError = _validateMobile(_mobileController.text);
 
@@ -104,7 +100,6 @@ class _LoginPageState extends State<LoginPage> {
       debugPrint('Mobile: $mobile');
       debugPrint('Name: $name');
 
-      
       final response = await AuthApi.sendOtp(mobile);
 
       debugPrint('API Response: $response');
@@ -119,16 +114,13 @@ class _LoginPageState extends State<LoginPage> {
       debugPrint('OTP Received: $otpFromApi');
       debugPrint('User Type: $userType');
 
-      
       final prefs = await SharedPreferences.getInstance();
 
-      
       await prefs.setString('user_name', name);
       await prefs.setString('username', name);
       await prefs.setString('user_mobile', mobile);
       await prefs.setString('usermobile', mobile);
 
-      
       await prefs.setString('current_otp', otpFromApi);
       await prefs.setString('otp_timestamp', DateTime.now().toIso8601String());
 
@@ -139,7 +131,6 @@ class _LoginPageState extends State<LoginPage> {
 
       _showSnackBar('OTP sent successfully!', isError: false);
 
-      
       if (mounted) {
         await Navigator.push(
           context,
@@ -181,7 +172,7 @@ class _LoginPageState extends State<LoginPage> {
           children: [
             Icon(
               isError ? Icons.error_outline : Icons.check_circle_outline,
-              color: Colors.white,
+              color: const Color(0xFFFFFFFF),
               size: 20,
             ),
             const SizedBox(width: 12),
@@ -196,7 +187,9 @@ class _LoginPageState extends State<LoginPage> {
             ),
           ],
         ),
-        backgroundColor: isError ? Colors.red[700] : Colors.green[700],
+        backgroundColor: isError
+            ? const Color(0xFFC62828)
+            : const Color(0xFF388E3C),
         behavior: SnackBarBehavior.floating,
         margin: const EdgeInsets.all(16),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
@@ -208,7 +201,7 @@ class _LoginPageState extends State<LoginPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.white,
+      backgroundColor: const Color(0xFFFFFFFF),
       body: SafeArea(
         child: Center(
           child: SingleChildScrollView(
@@ -219,7 +212,6 @@ class _LoginPageState extends State<LoginPage> {
                 children: [
                   const SizedBox(height: 20),
 
-                  
                   Align(
                     alignment: Alignment.topLeft,
                     child: RichText(
@@ -239,7 +231,7 @@ class _LoginPageState extends State<LoginPage> {
                             style: TextStyle(
                               fontSize: 32,
                               fontWeight: FontWeight.bold,
-                              color: Colors.black,
+                              color: Color(0xFF000000),
                               letterSpacing: 1,
                             ),
                           ),
@@ -250,7 +242,6 @@ class _LoginPageState extends State<LoginPage> {
 
                   const SizedBox(height: 40),
 
-                 
                   Image.asset(
                     'assets/images/6190576 1.png',
                     height: 280,
@@ -262,7 +253,7 @@ class _LoginPageState extends State<LoginPage> {
                         child: const Icon(
                           Icons.image_not_supported,
                           size: 60,
-                          color: Colors.grey,
+                          color: Color(0xFF9E9E9E),
                         ),
                       );
                     },
@@ -270,27 +261,28 @@ class _LoginPageState extends State<LoginPage> {
 
                   const SizedBox(height: 30),
 
-                  
                   const Text(
                     'Scan : Pay : Wash : Move',
                     style: TextStyle(
                       fontSize: 18,
                       fontWeight: FontWeight.w600,
-                      color: Colors.black87,
+                      color: Color(0xFF212121),
                       letterSpacing: 0.5,
                     ),
                   ),
 
                   const SizedBox(height: 35),
 
-                  
                   SizedBox(
                     width: 220,
                     child: Container(
                       decoration: BoxDecoration(
                         borderRadius: BorderRadius.circular(25),
-                        border: Border.all(color: Colors.black87, width: 1.5),
-                        color: Colors.white,
+                        border: Border.all(
+                          color: const Color(0xFF212121),
+                          width: 1.5,
+                        ),
+                        color: const Color(0xFFFFFFFF),
                       ),
                       child: TextField(
                         controller: _nameController,
@@ -304,7 +296,7 @@ class _LoginPageState extends State<LoginPage> {
                         decoration: const InputDecoration(
                           hintText: 'Enter your name',
                           hintStyle: TextStyle(
-                            color: Colors.grey,
+                            color: Color(0xFF9E9E9E),
                             fontSize: 13,
                             fontWeight: FontWeight.w400,
                           ),
@@ -320,14 +312,16 @@ class _LoginPageState extends State<LoginPage> {
 
                   const SizedBox(height: 16),
 
-                  
                   SizedBox(
                     width: 220,
                     child: Container(
                       decoration: BoxDecoration(
                         borderRadius: BorderRadius.circular(25),
-                        border: Border.all(color: Colors.black87, width: 1.5),
-                        color: Colors.white,
+                        border: Border.all(
+                          color: const Color(0xFF212121),
+                          width: 1.5,
+                        ),
+                        color: const Color(0xFFFFFFFF),
                       ),
                       child: TextField(
                         controller: _mobileController,
@@ -343,7 +337,7 @@ class _LoginPageState extends State<LoginPage> {
                         decoration: const InputDecoration(
                           hintText: 'Mobile number',
                           hintStyle: TextStyle(
-                            color: Colors.grey,
+                            color: Color(0xFF9E9E9E),
                             fontSize: 13,
                             fontWeight: FontWeight.w400,
                           ),
@@ -360,7 +354,6 @@ class _LoginPageState extends State<LoginPage> {
 
                   const SizedBox(height: 25),
 
-                  
                   SizedBox(
                     width: 140,
                     height: 48,
@@ -368,7 +361,7 @@ class _LoginPageState extends State<LoginPage> {
                       onPressed: _isLoading ? null : _handleContinue,
                       style: ElevatedButton.styleFrom(
                         backgroundColor: const Color(0xFF4A90E2),
-                        foregroundColor: Colors.white,
+                        foregroundColor: const Color(0xFFFFFFFF),
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(24),
                         ),
@@ -383,7 +376,7 @@ class _LoginPageState extends State<LoginPage> {
                               height: 20,
                               width: 20,
                               child: CircularProgressIndicator(
-                                color: Colors.white,
+                                color: Color(0xFFFFFFFF),
                                 strokeWidth: 2.5,
                               ),
                             )
@@ -400,7 +393,6 @@ class _LoginPageState extends State<LoginPage> {
 
                   const SizedBox(height: 40),
 
-                  
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 10),
                     child: RichText(
@@ -408,7 +400,7 @@ class _LoginPageState extends State<LoginPage> {
                       text: TextSpan(
                         style: const TextStyle(
                           fontSize: 11,
-                          color: Colors.black87,
+                          color: Color(0xFF212121),
                           height: 1.5,
                         ),
                         children: [
@@ -416,7 +408,7 @@ class _LoginPageState extends State<LoginPage> {
                           TextSpan(
                             text: 'terms of service',
                             style: TextStyle(
-                              color: Colors.blue[700],
+                              color: const Color(0xFF1976D2),
                               fontWeight: FontWeight.w600,
                               decoration: TextDecoration.underline,
                             ),
@@ -425,7 +417,7 @@ class _LoginPageState extends State<LoginPage> {
                           TextSpan(
                             text: 'privacy policy',
                             style: TextStyle(
-                              color: Colors.blue[700],
+                              color: const Color(0xFF1976D2),
                               fontWeight: FontWeight.w600,
                               decoration: TextDecoration.underline,
                             ),
