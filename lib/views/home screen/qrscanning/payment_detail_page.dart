@@ -1,5 +1,4 @@
 import 'dart:convert';
-
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:internship_duxoff_hub/services/home_api_service.dart';
@@ -35,10 +34,7 @@ class _PaymentDetailsPageState extends State<PaymentDetailsPage> {
   late Razorpay _razorpay;
   bool _isProcessing = false;
   String? _pendingOrderId;
-
-  late TextEditingController _amountController;
   late double _currentAmount;
-  bool _isEditingAmount = false;
 
   // Original price before discount (for display purposes)
   double _originalPrice = 150.0;
@@ -51,9 +47,6 @@ class _PaymentDetailsPageState extends State<PaymentDetailsPage> {
     super.initState();
     // Initialize with the passed totalPrice (this is the offer price)
     _currentAmount = widget.totalPrice;
-    _amountController = TextEditingController(
-      text: _currentAmount.toStringAsFixed(0),
-    );
 
     // Calculate original price based on offer price
     // Assuming offer is typically 33-50% off
@@ -82,7 +75,6 @@ class _PaymentDetailsPageState extends State<PaymentDetailsPage> {
 
   @override
   void dispose() {
-    _amountController.dispose();
     try {
       _razorpay.clear();
     } catch (e) {
@@ -91,40 +83,10 @@ class _PaymentDetailsPageState extends State<PaymentDetailsPage> {
     super.dispose();
   }
 
-  // ==================== AMOUNT MANAGEMENT ====================
-
-  void _updateAmount() {
-    final newAmount = double.tryParse(_amountController.text);
-    if (newAmount == null || newAmount <= 0) {
-      _showErrorDialog(
-        'Invalid Amount',
-        'Please enter a valid amount greater than 0',
-      );
-      _amountController.text = _currentAmount.toStringAsFixed(0);
-      return;
-    }
-
-    setState(() {
-      _currentAmount = newAmount;
-      _isEditingAmount = false;
-    });
-    debugPrint('💰 Amount updated to: $_currentAmount');
-  }
-
-  void _resetAmount() {
-    setState(() {
-      _currentAmount = widget.totalPrice;
-      _amountController.text = _currentAmount.toStringAsFixed(0);
-      _isEditingAmount = false;
-    });
-    debugPrint('🔄 Amount reset to original price: $_currentAmount');
-  }
-
   // ==================== USER CREDENTIALS ====================
 
   Future<Map<String, String>> _getUserCredentials() async {
     final prefs = await SharedPreferences.getInstance();
-
     final mobile =
         prefs.getString('user_mobile') ?? prefs.getString('usermobile') ?? '';
     final token = prefs.getString('session_token') ??
@@ -144,7 +106,6 @@ class _PaymentDetailsPageState extends State<PaymentDetailsPage> {
 
   Future<int> _getUserId() async {
     final prefs = await SharedPreferences.getInstance();
-
     int userId = prefs.getInt('user_id') ??
         prefs.getInt('userid') ??
         prefs.getInt('userId') ??
@@ -181,7 +142,7 @@ class _PaymentDetailsPageState extends State<PaymentDetailsPage> {
     final endTime =
         now.add(Duration(minutes: durationMinutes)).toUtc().toIso8601String();
 
-    debugPrint('📤 Booking device...');
+    debugPrint('Booking device...');
     debugPrint('   Amount: ${_currentAmount.toInt()}');
     debugPrint('   Duration: $durationMinutes minutes');
 
@@ -209,7 +170,7 @@ class _PaymentDetailsPageState extends State<PaymentDetailsPage> {
       endTime: endTime,
     );
 
-    debugPrint('✅ Device booked successfully');
+    debugPrint(' Device booked successfully');
   }
 
   Future<void> _storeBookingLocally({
@@ -231,12 +192,13 @@ class _PaymentDetailsPageState extends State<PaymentDetailsPage> {
         'starttime': startTime,
         'endtime': endTime,
         'timestamp': DateTime.now().toIso8601String(),
+        'completed': false,
       };
 
       final bookingKey =
           'booking_${widget.deviceId}_${DateTime.now().millisecondsSinceEpoch}';
       await prefs.setString(bookingKey, jsonEncode(bookingData));
-      debugPrint('💾 Stored booking locally: $bookingKey');
+      debugPrint('💾 Stored booking locally: $bookingKey (NOT completed)');
     } catch (e) {
       debugPrint('⚠️ Failed to store booking locally: $e');
     }
@@ -330,14 +292,14 @@ class _PaymentDetailsPageState extends State<PaymentDetailsPage> {
   }
 
   void _handleExternalWallet(ExternalWalletResponse response) {
-    debugPrint('👛 External Wallet Selected: ${response.walletName}');
+    debugPrint('External Wallet Selected: ${response.walletName}');
   }
 
   // ==================== PAYMENT FLOW ====================
 
   Future<void> _processPayment(BuildContext context) async {
     if (_isProcessing) {
-      debugPrint('⚠️ Payment already in progress');
+      debugPrint(' Payment already in progress');
       return;
     }
 
@@ -350,11 +312,11 @@ class _PaymentDetailsPageState extends State<PaymentDetailsPage> {
       final userId = await _getUserId();
 
       debugPrint('========== PROCESSING PAYMENT ==========');
-      debugPrint('👤 User: ${credentials['name']}');
-      debugPrint('📱 Mobile: ${credentials['mobile']}');
-      debugPrint('🆔 User ID: $userId');
+      debugPrint(' User: ${credentials['name']}');
+      debugPrint(' Mobile: ${credentials['mobile']}');
+      debugPrint(' User ID: $userId');
       debugPrint(
-        '💰 Amount: ₹$_currentAmount (${(_currentAmount * 100).toInt()} paise)',
+        'Amount: ₹$_currentAmount (${(_currentAmount * 100).toInt()} paise)',
       );
 
       if (mounted) {
@@ -373,7 +335,7 @@ class _PaymentDetailsPageState extends State<PaymentDetailsPage> {
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         CircularProgressIndicator(
-                          valueColor: AlwaysStoppedAnimation<Color>(
+                          valueColor: AlwaysStoppedAnimation(
                             Color(0xFF4A90E2),
                           ),
                         ),
@@ -389,7 +351,7 @@ class _PaymentDetailsPageState extends State<PaymentDetailsPage> {
         );
       }
 
-      debugPrint('🔄 Creating payment order...');
+      debugPrint(' Creating payment order...');
       final orderResponse = await HomeApi.createPaymentOrder(
         amount: (_currentAmount * 100).toInt(),
         userId: userId,
@@ -406,7 +368,7 @@ class _PaymentDetailsPageState extends State<PaymentDetailsPage> {
 
       final orderId = orderResponse['orderId'].toString();
       _pendingOrderId = orderId;
-      debugPrint('✅ Order created: $orderId');
+      debugPrint(' Order created: $orderId');
 
       if (dialogContext != null && mounted) {
         Navigator.pop(dialogContext!);
@@ -425,7 +387,7 @@ class _PaymentDetailsPageState extends State<PaymentDetailsPage> {
         );
       }
     } catch (e, stackTrace) {
-      debugPrint('❌ Payment initialization error: $e');
+      debugPrint(' Payment initialization error: $e');
       debugPrint('Stack trace: $stackTrace');
 
       if (dialogContext != null && mounted) {
@@ -450,8 +412,8 @@ class _PaymentDetailsPageState extends State<PaymentDetailsPage> {
   }) {
     try {
       debugPrint('========== OPENING RAZORPAY ==========');
-      debugPrint('📋 Order ID: $orderId');
-      debugPrint('💰 Amount: ₹$_currentAmount');
+      debugPrint(' Order ID: $orderId');
+      debugPrint(' Amount: ₹$_currentAmount');
 
       final options = {
         'key': razorpayKeyId,
@@ -467,10 +429,10 @@ class _PaymentDetailsPageState extends State<PaymentDetailsPage> {
       };
 
       _razorpay.open(options);
-      debugPrint('✅ Razorpay opened successfully');
+      debugPrint(' Razorpay opened successfully');
       debugPrint('=====================================');
     } catch (e, stackTrace) {
-      debugPrint('❌ CRITICAL ERROR opening Razorpay: $e');
+      debugPrint(' CRITICAL ERROR opening Razorpay: $e');
       debugPrint('Stack trace: $stackTrace');
 
       if (mounted) {
@@ -680,7 +642,6 @@ class _PaymentDetailsPageState extends State<PaymentDetailsPage> {
                   ),
                 ),
               const SizedBox(height: 24),
-
               Container(
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
@@ -691,118 +652,26 @@ class _PaymentDetailsPageState extends State<PaymentDetailsPage> {
                     width: 1,
                   ),
                 ),
-                child: Column(
+                child: Row(
                   children: [
-                    Row(
-                      children: [
-                        const Expanded(
-                          child: Text(
-                            'Total Price',
-                            style: TextStyle(
-                              fontSize: 14,
-                              fontWeight: FontWeight.w600,
-                              color: Colors.black87,
-                            ),
-                          ),
+                    const Expanded(
+                      child: Text(
+                        'Total Price',
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.black87,
                         ),
-                        if (!_isEditingAmount) ...[
-                          Text(
-                            '₹ ${_currentAmount.toStringAsFixed(0)}',
-                            style: const TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.w700,
-                              color: Color(0xFF4A90E2),
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          IconButton(
-                            icon: const Icon(Icons.edit, size: 20),
-                            color: const Color(0xFF4A90E2),
-                            onPressed: () {
-                              setState(() => _isEditingAmount = true);
-                            },
-                            padding: EdgeInsets.zero,
-                            constraints: const BoxConstraints(),
-                          ),
-                        ] else ...[
-                          Expanded(
-                            child: TextField(
-                              controller: _amountController,
-                              keyboardType:
-                                  const TextInputType.numberWithOptions(
-                                decimal: true,
-                              ),
-                              inputFormatters: [
-                                FilteringTextInputFormatter.allow(
-                                  RegExp(r'^\d+\.?\d{0,2}'),
-                                ),
-                              ],
-                              decoration: const InputDecoration(
-                                prefix: Text('₹ '),
-                                isDense: true,
-                                contentPadding: EdgeInsets.symmetric(
-                                  horizontal: 8,
-                                  vertical: 8,
-                                ),
-                                border: OutlineInputBorder(),
-                              ),
-                              style: const TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.w600,
-                              ),
-                              autofocus: true,
-                              onSubmitted: (_) => _updateAmount(),
-                            ),
-                          ),
-                          IconButton(
-                            icon: const Icon(Icons.check, size: 20),
-                            color: Colors.green,
-                            onPressed: _updateAmount,
-                            padding: EdgeInsets.zero,
-                            constraints: const BoxConstraints(),
-                          ),
-                          IconButton(
-                            icon: const Icon(Icons.close, size: 20),
-                            color: Colors.red,
-                            onPressed: () {
-                              setState(() {
-                                _isEditingAmount = false;
-                                _amountController.text =
-                                    _currentAmount.toStringAsFixed(0);
-                              });
-                            },
-                            padding: EdgeInsets.zero,
-                            constraints: const BoxConstraints(),
-                          ),
-                        ],
-                      ],
-                    ),
-                    if (_currentAmount != widget.totalPrice) ...[
-                      const SizedBox(height: 8),
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Text(
-                            'Original: ₹${widget.totalPrice.toStringAsFixed(0)}',
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: Colors.grey[600],
-                              decoration: TextDecoration.lineThrough,
-                            ),
-                          ),
-                          TextButton.icon(
-                            onPressed: _resetAmount,
-                            icon: const Icon(Icons.refresh, size: 16),
-                            label: const Text('Reset'),
-                            style: TextButton.styleFrom(
-                              padding: EdgeInsets.zero,
-                              minimumSize: const Size(0, 0),
-                              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                            ),
-                          ),
-                        ],
                       ),
-                    ],
+                    ),
+                    Text(
+                      '₹ ${_currentAmount.toStringAsFixed(0)}',
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w700,
+                        color: Color(0xFF4A90E2),
+                      ),
+                    ),
                   ],
                 ),
               ),
@@ -832,7 +701,7 @@ class _PaymentDetailsPageState extends State<PaymentDetailsPage> {
                             width: 20,
                             child: CircularProgressIndicator(
                               strokeWidth: 2.5,
-                              valueColor: AlwaysStoppedAnimation<Color>(
+                              valueColor: AlwaysStoppedAnimation(
                                 Colors.white,
                               ),
                             ),

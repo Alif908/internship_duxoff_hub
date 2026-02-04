@@ -1,4 +1,3 @@
-
 class ApiService {
   // baseurl
   static const String baseUrl = 'https://api.qkwash.com';

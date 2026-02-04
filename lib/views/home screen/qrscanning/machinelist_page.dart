@@ -35,6 +35,8 @@ class _MachineListPageState extends State<MachineListPage> {
     _refreshDeviceStatuses();
   }
 
+  // ==================== HYBRID JOB DETECTION FOR DEVICE STATUS ====================
+
   Future<void> _refreshDeviceStatuses() async {
     if (_isRefreshing) return;
 
@@ -43,68 +45,152 @@ class _MachineListPageState extends State<MachineListPage> {
     });
 
     try {
-      debugPrint('🔄 Refreshing device statuses for hub ${widget.hubId}...');
+      debugPrint(
+          ' [MachineList] Refreshing device statuses for hub ${widget.hubId}...');
 
-      final runningJobs = await HomeApi.getRunningJobs(forceRefresh: true);
+     
+      final apiRunningJobs = await HomeApi.getRunningJobs(forceRefresh: true);
+      final bookingHistory = await HomeApi.getBookingHistory();
+
       final now = DateTime.now();
+      final Set<String> processedDevices = {};
 
-      debugPrint('📋 Found ${runningJobs.length} running jobs');
+      debugPrint(' [MachineList] API running jobs: ${apiRunningJobs.length}');
+      debugPrint(' [MachineList] Booking history: ${bookingHistory.length}');
 
-      for (var device in _devices) {
-        final deviceId = device['deviceid']?.toString() ?? '';
+      final Map<String, Map<String, dynamic>> activeJobsByDevice = {};
 
-        final oldStatus = device['devicestatus']?.toString() ?? '0';
+      for (var job in apiRunningJobs) {
+        final deviceId = job['deviceid']?.toString() ?? '';
+        if (deviceId.isEmpty) continue;
 
-        final runningJob = runningJobs.firstWhere(
-          (job) => job['deviceid']?.toString() == deviceId,
-          orElse: () => null,
-        );
+        final deviceStatus = job['devicestatus']?.toString() ?? '0';
+        final endTimeString = job['device_booked_user_end_time']?.toString();
 
-        if (runningJob != null) {
-          final newStatus = runningJob['devicestatus']?.toString() ?? '0';
-          final newEndTime = runningJob['device_booked_user_end_time'];
+        final numericStatus = int.tryParse(deviceStatus);
 
-          // ✅ CHECK 1: If status is 100, mark as available
-          if (newStatus == "100") {
-            debugPrint(
-              '✅ Device $deviceId completed (status=100), marking as available',
-            );
-            device['devicestatus'] = 'Ready';
-            device['device_booked_user_end_time'] = null;
-            continue;
+        bool isStillRunning = false;
+
+        if (numericStatus == 100) {
+          debugPrint(
+              ' [MachineList] Skipping completed job (status=100): Device $deviceId');
+          continue;
+        }
+
+        if (endTimeString != null && endTimeString.isNotEmpty) {
+          try {
+            final endTime = DateTime.parse(endTimeString).toLocal();
+            if (now.isBefore(endTime)) {
+              isStillRunning = true;
+            } else {
+              debugPrint(
+                  ' [MachineList] Job ended (time passed): Device $deviceId');
+              continue;
+            }
+          } catch (e) {
+            debugPrint(' [MachineList] Error parsing end time: $e');
+
+            if (numericStatus != null && numericStatus < 100) {
+              isStillRunning = true;
+            }
+          }
+        } else if (numericStatus != null && numericStatus < 100) {
+          isStillRunning = true;
+        }
+
+        if (isStillRunning) {
+          activeJobsByDevice[deviceId] = job;
+          processedDevices.add(deviceId);
+          debugPrint(
+              ' [MachineList] API job for device $deviceId: status=$deviceStatus');
+        }
+      }
+
+      debugPrint('🔍 [MachineList] Checking history for manual bookings...');
+
+      for (var historyItem in bookingHistory) {
+        final deviceId = historyItem['deviceid']?.toString() ?? '';
+        final endTimeString =
+            historyItem['device_booked_user_end_time']?.toString() ?? '';
+        final startTimeString =
+            historyItem['device_booked_user_start_time']?.toString() ?? '';
+
+        if (deviceId.isEmpty || endTimeString.isEmpty) continue;
+
+        // Skip if already processed from API running jobs
+        if (processedDevices.contains(deviceId)) continue;
+
+        try {
+          DateTime endTime = DateTime.parse(endTimeString);
+          if (endTime.isUtc || endTimeString.endsWith('Z')) {
+            endTime = endTime.toLocal();
           }
 
-          // ✅ CHECK 2: If end time has passed, mark as available
-          if (newEndTime != null && newEndTime.toString().isNotEmpty) {
-            try {
-              final endTime = DateTime.parse(newEndTime.toString()).toLocal();
-              if (now.isAfter(endTime)) {
-                debugPrint(
-                  '✅ Device $deviceId end time passed (${DateFormat('HH:mm').format(endTime)}), marking as available',
-                );
-                device['devicestatus'] = 'Ready';
-                device['device_booked_user_end_time'] = null;
-                continue;
-              }
-            } catch (e) {
-              debugPrint('⚠️ Error parsing end time for device $deviceId: $e');
+          DateTime? startTime;
+          if (startTimeString.isNotEmpty) {
+            startTime = DateTime.parse(startTimeString);
+            if (startTime.isUtc || startTimeString.endsWith('Z')) {
+              startTime = startTime.toLocal();
             }
           }
 
-          // ✅ Still running - update status and end time
+          final bool endTimeInFuture = now.isBefore(endTime);
+          final bool startTimeInPast =
+              startTime == null || now.isAfter(startTime);
+
+          if (endTimeInFuture && startTimeInPast) {
+            activeJobsByDevice[deviceId] = historyItem;
+            processedDevices.add(deviceId);
+
+            debugPrint(' [MachineList] MANUAL BOOKING: Device $deviceId');
+            debugPrint('    Booked via host machine');
+            debugPrint('    Ends at ${DateFormat('HH:mm').format(endTime)}');
+          }
+        } catch (e) {
+          debugPrint(' [MachineList] Error checking history item: $e');
+        }
+      }
+
+      debugPrint(' [MachineList] Updating ${_devices.length} devices...');
+      debugPrint(
+          '[MachineList] Current time: ${DateFormat('yyyy-MM-dd HH:mm:ss').format(now)}');
+
+      for (var device in _devices) {
+        final deviceId = device['deviceid']?.toString() ?? '';
+        if (deviceId.isEmpty) continue;
+
+        final oldStatus = device['devicestatus']?.toString() ?? '0';
+
+        if (activeJobsByDevice.containsKey(deviceId)) {
+          // Device has an active job
+          final job = activeJobsByDevice[deviceId]!;
+          final newStatus = job['devicestatus']?.toString() ?? '0';
+          final newEndTime = job['device_booked_user_end_time'];
+
           device['devicestatus'] = newStatus;
           device['device_booked_user_end_time'] = newEndTime;
+
           debugPrint(
-            '⏳ Device $deviceId still running (status=$newStatus)',
-          );
+              '⏳ [MachineList] Device $deviceId: status=$newStatus (running)');
+          if (newEndTime != null) {
+            try {
+              final endTime = DateTime.parse(newEndTime.toString()).toLocal();
+              debugPrint(
+                  '   End time: ${DateFormat('yyyy-MM-dd HH:mm:ss').format(endTime)}');
+              debugPrint(
+                  '   Minutes remaining: ${endTime.difference(now).inMinutes}');
+            } catch (e) {
+              debugPrint('   Could not parse end time: $newEndTime');
+            }
+          }
         } else {
-          // No running job found for this device
-          if (oldStatus != '0' && oldStatus != 'ready') {
+          if (oldStatus != '0' && oldStatus.toLowerCase() != 'ready') {
+            debugPrint(
+                '✅ [MachineList] Device $deviceId: No active job, marking as Ready (was: $oldStatus)');
             device['devicestatus'] = 'Ready';
             device['device_booked_user_end_time'] = null;
-            debugPrint(
-              '✅ Device $deviceId job completed/not found, marked as available',
-            );
+          } else {
+            debugPrint('   Device $deviceId: Already Ready/Available');
           }
         }
       }
@@ -115,9 +201,11 @@ class _MachineListPageState extends State<MachineListPage> {
         });
       }
 
-      debugPrint('✅ Device status refresh completed');
+      debugPrint('✅ [MachineList] Device status refresh completed');
+      debugPrint('   Total devices: ${_devices.length}');
+      debugPrint('   Active jobs: ${activeJobsByDevice.length}');
     } catch (e) {
-      debugPrint('❌ Error refreshing device statuses: $e');
+      debugPrint('❌ [MachineList] Error refreshing device statuses: $e');
       if (mounted) {
         setState(() {
           _isRefreshing = false;
@@ -340,7 +428,6 @@ class _MachineListPageState extends State<MachineListPage> {
         (device['devicecondition'] ?? 'Good').toString().toLowerCase();
     final String? endTimeStr = device['device_booked_user_end_time'];
 
-    // ✅ CHECK 1: Under Maintenance if condition is NOT "good"
     if (deviceCondition != 'good') {
       return GestureDetector(
         onTap: () => _showMaintenanceDialog(device),
@@ -364,7 +451,6 @@ class _MachineListPageState extends State<MachineListPage> {
       );
     }
 
-    // ✅ CHECK 2: Available if status is "ready" AND condition is "good"
     if (deviceStatus == 'ready' && deviceCondition == 'good') {
       return ElevatedButton(
         onPressed: () {
@@ -384,16 +470,14 @@ class _MachineListPageState extends State<MachineListPage> {
       );
     }
 
-    // ✅ CHECK 3: If status is numeric (0-100) AND condition is "good"
     final numericStatus = int.tryParse(deviceStatus);
     if (numericStatus != null &&
         numericStatus >= 0 &&
         numericStatus <= 100 &&
         deviceCondition == 'good') {
-      // ✅ CHECK 3A: If status is 100 (completed), show as Available
-      if (numericStatus == 100) {
+      if (numericStatus == 0 || numericStatus == 100) {
         debugPrint(
-          '✅ Device ${device['deviceid']} status is 100, showing as Available',
+          '✅ Device ${device['deviceid']} status is $numericStatus, showing as Available',
         );
         return ElevatedButton(
           onPressed: () {
@@ -414,16 +498,25 @@ class _MachineListPageState extends State<MachineListPage> {
         );
       }
 
-      // ✅ CHECK 3B: Status is 0-99, check if end time has passed
       if (endTimeStr != null && endTimeStr.isNotEmpty) {
         try {
           final endTime = DateTime.parse(endTimeStr).toLocal();
           final now = DateTime.now();
 
+          // Detailed logging for debugging
+          debugPrint('Device ${device['deviceid']} Time Check:');
+          debugPrint(
+              '   Current time: ${DateFormat('yyyy-MM-dd HH:mm:ss').format(now)}');
+          debugPrint(
+              '   End time: ${DateFormat('yyyy-MM-dd HH:mm:ss').format(endTime)}');
+          debugPrint('   Status: $numericStatus');
+          debugPrint(
+              '   Time until available: ${endTime.difference(now).inMinutes} minutes');
+
           // If end time has passed, show as Available
           if (now.isAfter(endTime)) {
             debugPrint(
-              '✅ Device ${device['deviceid']} end time passed, showing as Available',
+              'Device ${device['deviceid']} end time passed, showing as Available',
             );
             return ElevatedButton(
               onPressed: () {
@@ -448,8 +541,10 @@ class _MachineListPageState extends State<MachineListPage> {
             );
           }
 
-          // Still running - show "Available at" time
           final String formattedTime = _formatEndTime(endTimeStr);
+
+          debugPrint(
+              '⏳ Device ${device['deviceid']} still busy (status: $numericStatus), available at $formattedTime');
 
           return GestureDetector(
             onTap: () => _showAvailabilityDialog(device),
@@ -485,8 +580,8 @@ class _MachineListPageState extends State<MachineListPage> {
             ),
           );
         } catch (e) {
-          debugPrint('⚠️ Error parsing end time: $e');
-          // If error parsing time, show as available
+          debugPrint('Error parsing end time: $e');
+
           return ElevatedButton(
             onPressed: () {
               _showWashOptionsModal(device);
@@ -496,8 +591,7 @@ class _MachineListPageState extends State<MachineListPage> {
               foregroundColor: Colors.white,
               padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
               shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(6),
-              ),
+                  borderRadius: BorderRadius.circular(6)),
               elevation: 0,
             ),
             child: const Text(
@@ -506,46 +600,32 @@ class _MachineListPageState extends State<MachineListPage> {
             ),
           );
         }
-      } else {
-        // No end time but status is numeric and condition is good
-        // Show "Available at" with placeholder time
-        return GestureDetector(
-          onTap: () => _showAvailabilityDialog(device),
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-            decoration: BoxDecoration(
-              color: const Color(0xFF78909C),
-              borderRadius: BorderRadius.circular(6),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.center,
-              mainAxisSize: MainAxisSize.min,
-              children: const [
-                Text(
-                  'Available at',
-                  style: TextStyle(
-                    fontSize: 10,
-                    color: Colors.white,
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-                SizedBox(height: 2),
-                Text(
-                  '10:15 pm',
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: Colors.white,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ],
+      }
+
+      debugPrint(
+          '⏳ Device ${device['deviceid']} status $numericStatus but no end time');
+      return GestureDetector(
+        onTap: () => _showAvailabilityDialog(device),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+          decoration: BoxDecoration(
+            color: const Color(0xFF78909C),
+            borderRadius: BorderRadius.circular(6),
+          ),
+          child: const Text(
+            'Busy',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              fontSize: 13,
+              color: Colors.white,
+              fontWeight: FontWeight.w600,
             ),
           ),
-        );
-      }
+        ),
+      );
     }
 
-    // Fallback: Show as available
+    debugPrint('⚠️ Device ${device['deviceid']} unknown status: $deviceStatus');
     return ElevatedButton(
       onPressed: () {
         _showWashOptionsModal(device);

@@ -19,12 +19,11 @@ class HomeApi {
 
     final mobile =
         prefs.getString('user_mobile') ?? prefs.getString('usermobile') ?? '';
-    final token =
-        prefs.getString('session_token') ??
+    final token = prefs.getString('session_token') ??
         prefs.getString('sessionToken') ??
         '';
 
-    debugPrint('🔍 Credential Check:');
+    debugPrint(' Credential Check:');
     debugPrint('   Final mobile: $mobile');
     debugPrint('   Final token exists: ${token.isNotEmpty}');
 
@@ -74,7 +73,7 @@ class HomeApi {
           rawList = data['data'] as List;
         }
 
-        debugPrint('📊 Raw API items: ${rawList.length}');
+        debugPrint(' Raw API items: ${rawList.length}');
 
         for (var item in rawList) {
           if (item == null || item is! Map) continue;
@@ -87,11 +86,11 @@ class HomeApi {
 
           // Create unique key
           final deviceId = (normalized['deviceid'] ?? '').toString();
-          final endTime = (normalized['device_booked_user_end_time'] ?? '')
-              .toString();
+          final endTime =
+              (normalized['device_booked_user_end_time'] ?? '').toString();
 
           if (deviceId.isEmpty || endTime.isEmpty) {
-            debugPrint('⚠️ Skipping item with missing deviceId or endTime');
+            debugPrint(' Skipping item with missing deviceId or endTime');
             continue;
           }
 
@@ -101,11 +100,11 @@ class HomeApi {
           if (!uniqueHistoryMap.containsKey(uniqueKey)) {
             uniqueHistoryMap[uniqueKey] = normalized;
             debugPrint(
-              '✅ Added history item: $uniqueKey, Amount: ${normalized['booked_user_amount']}',
+              ' Added history item: $uniqueKey, Amount: ${normalized['booked_user_amount']}',
             );
           } else {
             debugPrint(
-              '⚠️ Duplicate detected in API response: $uniqueKey - SKIPPING',
+              ' Duplicate detected in API response: $uniqueKey - SKIPPING',
             );
           }
         }
@@ -124,8 +123,8 @@ class HomeApi {
 
         for (var job in runningJobs) {
           final deviceStatus = (job['devicestatus'] ?? '').toString();
-          final endTimeString = (job['device_booked_user_end_time'] ?? '')
-              .toString();
+          final endTimeString =
+              (job['device_booked_user_end_time'] ?? '').toString();
 
           if (endTimeString.isEmpty) continue;
 
@@ -341,13 +340,13 @@ class HomeApi {
           // Filter out invalid jobs
           final validJobs = jobs.where((job) {
             final deviceId = (job['deviceid'] ?? '').toString();
-            final endTime = (job['device_booked_user_end_time'] ?? '')
-                .toString();
+            final endTime =
+                (job['device_booked_user_end_time'] ?? '').toString();
             return deviceId.isNotEmpty && endTime.isNotEmpty;
           }).toList();
 
           debugPrint(
-            '✅ Successfully loaded ${validJobs.length} valid running jobs (${jobs.length} total)',
+            ' Successfully loaded ${validJobs.length} valid running jobs (${jobs.length} total)',
           );
 
           // Update cache
@@ -356,7 +355,7 @@ class HomeApi {
 
           return validJobs;
         } else {
-          debugPrint('⚠️ Unexpected response format, returning empty list');
+          debugPrint(' Unexpected response format, returning empty list');
           return [];
         }
       } else if (response.statusCode == 401) {
@@ -373,7 +372,7 @@ class HomeApi {
         throw Exception('Failed to fetch running jobs: ${response.statusCode}');
       }
     } catch (e) {
-      debugPrint('❌ ERROR in getRunningJobs: $e');
+      debugPrint(' ERROR in getRunningJobs: $e');
       rethrow;
     }
   }
@@ -382,7 +381,7 @@ class HomeApi {
   static void clearRunningJobsCache() {
     _cachedRunningJobs = null;
     _lastRunningJobsFetch = null;
-    debugPrint('🗑️ Cleared running jobs cache');
+    debugPrint('Cleared running jobs cache');
   }
 
   /// GET HUB DETAILS (after QR scan)
@@ -506,12 +505,10 @@ class HomeApi {
   }) async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      final storedToken =
-          prefs.getString('session_token') ??
+      final storedToken = prefs.getString('session_token') ??
           prefs.getString('sessionToken') ??
           sessionToken;
-      final storedMobile =
-          prefs.getString('user_mobile') ??
+      final storedMobile = prefs.getString('user_mobile') ??
           prefs.getString('usermobile') ??
           mobileNumber;
 
@@ -524,21 +521,18 @@ class HomeApi {
 
       final url = Uri.parse('$baseUrl/api/hubs/hubs/book');
 
-      // ✅ CRITICAL: FORCE devicestatus to "0" for running jobs
-      // This ensures the booking appears in /api/user/runningjobs endpoint
       final body = {
         'hubid': hubId,
         'deviceid': deviceId,
-        'devicecondition': 'Good', // ✅ CHANGED: Always "Good"
-        'devicestatus': "0", // ⚠️ HARDCODED TO "0" - DO NOT CHANGE
+        'devicecondition': 'Good',
+        'devicestatus': "0",
         'device_booked_user_mobile_no': mobile,
         'device_booked_user_start_time': startTime,
         'device_booked_user_end_time': endTime,
         'booked_user_selected_wash_mode': washMode,
-        'booked_user_selected_detergent_preference':
-            'ecofriendly', // ✅ CHANGED: Always "ecofriendly"
+        'booked_user_selected_detergent_preference': 'ecofriendly',
         'booked_user_selected_duration': duration,
-        'transactionstatus': 'Success', // ✅ CHANGED: Always "Success"
+        'transactionstatus': 'Success',
         'paymentid': paymentId,
         'transactiontime': transactionTime,
         'transactionamount': transactionAmount,
@@ -546,7 +540,7 @@ class HomeApi {
       };
 
       debugPrint('========== BOOKING DEVICE ==========');
-      debugPrint('📤 Booking Request Details:');
+      debugPrint(' Booking Request Details:');
       debugPrint('   Hub ID: $hubId');
       debugPrint('   Device ID: $deviceId');
       debugPrint('   Device Status: 0 (FORCED)');
@@ -576,24 +570,22 @@ class HomeApi {
 
       debugPrint('');
       debugPrint('========== BOOKING RESPONSE ==========');
-      debugPrint('📥 Status Code: ${response.statusCode}');
-      debugPrint('📥 Response Body: ${response.body}');
+      debugPrint(' Status Code: ${response.statusCode}');
+      debugPrint(' Response Body: ${response.body}');
       debugPrint('======================================');
 
       if (response.statusCode == 200 || response.statusCode == 201) {
         final data = jsonDecode(response.body);
 
         debugPrint('');
-        debugPrint('✅ BOOKING SUCCESSFUL');
+        debugPrint(' BOOKING SUCCESSFUL');
 
-        // Clear the running jobs cache so next fetch gets fresh data
         clearRunningJobsCache();
 
-        debugPrint('🗑️ Cleared running jobs cache - next fetch will be fresh');
-        debugPrint('⏱️ Job should appear in running jobs within 5-10 seconds');
+        debugPrint(' Cleared running jobs cache - next fetch will be fresh');
+        debugPrint(' Job should appear in running jobs within 5-10 seconds');
         debugPrint('======================================');
 
-        // Handle various response formats
         if (data is Map<String, dynamic>) {
           if (data['success'] == true ||
               data['message']?.toString().toLowerCase().contains('success') ==
@@ -609,7 +601,6 @@ class HomeApi {
               data['message'] ?? data['error'] ?? 'Booking failed',
             );
           } else {
-            // If no explicit success/error, treat 200/201 as success
             return {
               'success': true,
               'message': 'Booking successful',
@@ -647,9 +638,9 @@ class HomeApi {
       }
     } catch (e) {
       debugPrint('');
-      debugPrint('❌ ========== BOOKING ERROR ==========');
-      debugPrint('❌ Error Details: $e');
-      debugPrint('❌ ====================================');
+      debugPrint(' ========== BOOKING ERROR ==========');
+      debugPrint(' Error Details: $e');
+      debugPrint(' ====================================');
       rethrow;
     }
   }
@@ -669,11 +660,10 @@ class HomeApi {
 
       if (device == null) return false;
 
-      // Check device condition - "1" typically means available
       final condition = device['devicecondition']?.toString() ?? '';
       return condition == "1";
     } catch (e) {
-      debugPrint('❌ Error checking device availability: $e');
+      debugPrint(' Error checking device availability: $e');
       return false;
     }
   }

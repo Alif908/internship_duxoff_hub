@@ -11,10 +11,20 @@ val newBuildDir: Directory =
         .get()
 rootProject.layout.buildDirectory.value(newBuildDir)
 
+/* 🔥 ADD THIS BLOCK (VERY IMPORTANT) */
+subprojects {
+    configurations.all {
+        resolutionStrategy {
+            force("com.android.tools:desugar_jdk_libs:2.1.4")
+        }
+    }
+}
+
 subprojects {
     val newSubprojectBuildDir: Directory = newBuildDir.dir(project.name)
     project.layout.buildDirectory.value(newSubprojectBuildDir)
 }
+
 subprojects {
     project.evaluationDependsOn(":app")
 }
