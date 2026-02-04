@@ -2,6 +2,7 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	
 	<key>CFBundleName</key>
 	<string>Qkwash</string>
 	<key>CFBundleDisplayName</key>
@@ -49,5 +50,17 @@
 	<true/>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
+	<key>UIBackgroundModes</key>
+	<array>
+    <string>remote-notification</string>
+	</array>
+	<!-- ✅ iOS Notification Support Keys -->
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>fetch</string>
+		<string>remote-notification</string>
+	</array>
+	<key>NSUserNotificationsUsageDescription</key>
+	<string>We need permission to send you notifications about your wash progress and completion status</string>
 </dict>
 </plist>

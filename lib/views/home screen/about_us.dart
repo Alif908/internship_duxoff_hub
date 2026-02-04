@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:internship_duxoff_hub/views/home%20screen/settings%20page/settings_page.dart';
-import 'package:internship_duxoff_hub/views/qkwashome.dart';
+
 
 class AboutUsPage extends StatelessWidget {
   const AboutUsPage({super.key});

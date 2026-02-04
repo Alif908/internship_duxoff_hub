@@ -77,7 +77,6 @@ class _WashStartPageState extends State<WashStartPage> {
                 child: Column(
                   children: [
                     const SizedBox(height: 20),
-
                     Image.asset(
                       'assets/images/startimg.png',
                       width: double.infinity,
@@ -99,9 +98,7 @@ class _WashStartPageState extends State<WashStartPage> {
                         );
                       },
                     ),
-
                     const SizedBox(height: 40),
-
                     const Text(
                       'Load your clothes',
                       style: TextStyle(
@@ -137,13 +134,11 @@ class _WashStartPageState extends State<WashStartPage> {
                         color: Colors.black87,
                       ),
                     ),
-
                     const SizedBox(height: 20),
                   ],
                 ),
               ),
             ),
-
             Padding(
               padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
               child: SizedBox(

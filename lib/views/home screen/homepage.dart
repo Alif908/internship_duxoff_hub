@@ -14,29 +14,58 @@ class HomePage extends StatefulWidget {
   State<HomePage> createState() => _HomePageState();
 }
 
-class _HomePageState extends State<HomePage> {
+class _HomePageState extends State<HomePage>
+    with AutomaticKeepAliveClientMixin {
+ 
+  @override
+  bool get wantKeepAlive => true;
+
+  // State variables
   bool _hasRunningJob = false;
   bool _isLoadingJob = true;
   bool _isLoadingHistory = true;
 
   Map<String, dynamic>? _runningJob;
-  List<dynamic> _historyList = [];
+  List<Map<String, dynamic>> _historyList = []; 
 
   String _errorMessageJob = '';
   String _errorMessageHistory = '';
 
+  // Timers
   Timer? _progressTimer;
   Timer? _apiRefreshTimer;
+
+  DateTime? _lastJobFetch;
+  DateTime? _lastHistoryFetch;
+  static const Duration _cacheValidDuration = Duration(seconds: 30);
+
+  bool _isNavigating = false;
 
   @override
   void initState() {
     super.initState();
+    _initializeData();
+    _startTimers();
+  }
+
+  @override
+  void dispose() {
+    _stopTimers();
+    super.dispose();
+  }
+
+  // INITIALIZATION
+  // ============================================================================
+
+  void _initializeData() {
     _fetchRunningJob();
     _fetchHistory();
+  }
 
+  void _startTimers() {
     _apiRefreshTimer = Timer.periodic(const Duration(seconds: 10), (timer) {
       if (mounted) {
-        _fetchRunningJob();
+        _fetchRunningJob(forceRefresh: false);
       }
     });
 
@@ -47,34 +76,33 @@ class _HomePageState extends State<HomePage> {
     });
   }
 
-  @override
-  void dispose() {
+  void _stopTimers() {
     _progressTimer?.cancel();
     _apiRefreshTimer?.cancel();
-    super.dispose();
   }
 
-  // Get progress from device status or calculate from time
-  double _getProgress(Map<String, dynamic> job) {
-    // First priority: use devicestatus from API
-    final String? deviceStatus = job['devicestatus']?.toString();
-    if (deviceStatus != null && deviceStatus.isNotEmpty) {
-      try {
-        final int status = int.parse(deviceStatus);
-        final double progress = status / 100.0;
-        debugPrint('[HomePage] Using API devicestatus: $deviceStatus%');
-        return progress.clamp(0.0, 1.0);
-      } catch (e) {
-        debugPrint('⚠️ [HomePage] Invalid devicestatus format: $deviceStatus');
-      }
-    }
+  // PROGRESS CALCULATION
+  // ============================================================================
 
-    // Fallback: calculate from time
-    debugPrint('[HomePage] devicestatus not available, using time calculation');
-    return _calculateProgressFromTime(
-      startTimeString: job['device_booked_user_start_time']?.toString(),
-      endTimeString: job['device_booked_user_end_time']?.toString(),
-    );
+  /// Get progress from device status or calculate from time
+  double _getProgress(Map<String, dynamic> job) {
+    try {
+      final String? deviceStatus = job['devicestatus']?.toString();
+      if (deviceStatus != null && deviceStatus.isNotEmpty) {
+        final int status = int.tryParse(deviceStatus) ?? 0;
+        if (status > 0) {
+          return (status / 100.0).clamp(0.0, 1.0);
+        }
+      }
+
+      return _calculateProgressFromTime(
+        startTimeString: job['device_booked_user_start_time']?.toString(),
+        endTimeString: job['device_booked_user_end_time']?.toString(),
+      );
+    } catch (e) {
+      debugPrint('❌ [HomePage] Error getting progress: $e');
+      return 0.0;
+    }
   }
 
   double _calculateProgressFromTime({
@@ -82,7 +110,6 @@ class _HomePageState extends State<HomePage> {
     required String? endTimeString,
   }) {
     if (endTimeString == null || endTimeString.isEmpty) {
-      debugPrint('Progress: No end time provided');
       return 0.0;
     }
 
@@ -94,104 +121,82 @@ class _HomePageState extends State<HomePage> {
         endTime = endTime.toLocal();
       }
 
-      debugPrint('⏰ [HomePage] Current Time: $now');
-      debugPrint('⏰ [HomePage] End Time: $endTime');
-
       if (now.isAfter(endTime)) {
-        debugPrint('[HomePage] Job Completed: 100%');
         return 1.0;
       }
 
       if (startTimeString != null && startTimeString.isNotEmpty) {
         DateTime startTime = DateTime.parse(startTimeString);
-
         if (startTime.isUtc || startTimeString.endsWith('Z')) {
           startTime = startTime.toLocal();
         }
 
-        debugPrint('[HomePage] Start Time: $startTime');
-
         if (now.isBefore(startTime)) {
-          debugPrint('[HomePage] Job not started yet: 0%');
           return 0.0;
         }
 
         final int totalSeconds = endTime.difference(startTime).inSeconds;
         final int elapsedSeconds = now.difference(startTime).inSeconds;
 
-        debugPrint(
-          '[HomePage] Total Duration: ${totalSeconds}s (${(totalSeconds / 60).toStringAsFixed(1)} min)',
-        );
-        debugPrint(
-          '[HomePage] Elapsed: ${elapsedSeconds}s (${(elapsedSeconds / 60).toStringAsFixed(1)} min)',
-        );
-
         if (totalSeconds <= 0) {
-          debugPrint('[HomePage] Invalid duration');
           return 0.0;
         }
 
-        double progress = elapsedSeconds / totalSeconds;
-        int progressPercent = (progress * 100).toInt();
-
-        debugPrint(
-          '🔄 [HomePage] Progress: $progressPercent% completed (from time)',
-        );
-
+        final double progress = elapsedSeconds / totalSeconds;
         return progress.clamp(0.0, 1.0);
       } else {
-        debugPrint('[HomePage] No start time - using estimation');
-
         final Duration remainingTime = endTime.difference(now);
         final int remainingMinutes = remainingTime.inMinutes;
-
-        debugPrint('[HomePage] Remaining: ${remainingMinutes} minutes');
-
         const int assumedTotalMinutes = 15;
         final int elapsedMinutes = assumedTotalMinutes - remainingMinutes;
 
-        debugPrint(
-          '[HomePage] Estimated Elapsed: $elapsedMinutes minutes (assumed total: $assumedTotalMinutes min)',
-        );
-
         if (elapsedMinutes <= 0) {
-          debugPrint('[HomePage] Progress: 5% completed (minimum)');
           return 0.05;
         }
 
-        double progress = elapsedMinutes / assumedTotalMinutes;
-        int progressPercent = (progress * 100).toInt();
-
-        debugPrint(
-          '[HomePage] Progress: $progressPercent% completed (estimated)',
-        );
-
+        final double progress = elapsedMinutes / assumedTotalMinutes;
         return progress.clamp(0.05, 1.0);
       }
     } catch (e) {
-      debugPrint('[HomePage] Error calculating progress: $e');
-      debugPrint('[HomePage] Start Time String: $startTimeString');
-      debugPrint('[HomePage] End Time String: $endTimeString');
+      debugPrint('[HomePage] Error calculating progress from time: $e');
       return 0.0;
     }
   }
 
-  Future<void> _fetchRunningJob() async {
+  // ============================================================================
+  // DATA FETCHING
+  // =======================================  =====================================
+
+  /// Fetch running jobs with optional caching
+  Future<void> _fetchRunningJob({bool forceRefresh = true}) async {
     if (!mounted) return;
+
+    // IMPROVEMENT 6: Use cache if available and valid (unless force refresh)
+    if (!forceRefresh &&
+        _lastJobFetch != null &&
+        DateTime.now().difference(_lastJobFetch!) < _cacheValidDuration) {
+      debugPrint('[HomePage] Using cached running job data');
+      return;
+    }
 
     final bool isInitialLoad = _runningJob == null && !_hasRunningJob;
 
-    setState(() {
-      if (isInitialLoad) {
-        _isLoadingJob = true;
-      }
-      _errorMessageJob = '';
-    });
+    if (mounted) {
+      setState(() {
+        if (isInitialLoad) {
+          _isLoadingJob = true;
+        }
+        _errorMessageJob = '';
+      });
+    }
 
     try {
       final List<dynamic> jobs = await HomeApi.getRunningJobs();
 
       if (!mounted) return;
+
+      // Update cache timestamp
+      _lastJobFetch = DateTime.now();
 
       if (jobs.isEmpty) {
         setState(() {
@@ -199,47 +204,11 @@ class _HomePageState extends State<HomePage> {
           _runningJob = null;
           _isLoadingJob = false;
         });
-        debugPrint('ℹ️ [HomePage] No running jobs found');
         return;
       }
 
-      final DateTime now = DateTime.now();
-
-      final List<dynamic> activeJobs = jobs.where((job) {
-        if (job == null || job is! Map) return false;
-
-        // Check device status - if it's "100", skip it (completed)
-        final String? deviceStatus = job['devicestatus']?.toString();
-        if (deviceStatus == "100") {
-          debugPrint(
-            '⏭️ [HomePage] Skipping job with devicestatus=100: Device ${job['deviceid']}',
-          );
-          return false;
-        }
-
-        final String? endTimeString = job['device_booked_user_end_time']
-            ?.toString();
-
-        if (endTimeString == null || endTimeString.isEmpty) {
-          return false;
-        }
-
-        try {
-          final DateTime endTime = DateTime.parse(endTimeString).toLocal();
-          final isActive = now.isBefore(endTime);
-
-          if (isActive) {
-            debugPrint(
-              '📌 [HomePage] Active job: Device ${job['deviceid']}, status: $deviceStatus%, ends at ${DateFormat('HH:mm').format(endTime)}',
-            );
-          }
-
-          return isActive;
-        } catch (e) {
-          debugPrint('⚠️ [HomePage] Invalid end time format: $endTimeString');
-          return false;
-        }
-      }).toList();
+      // Filter active jobs
+      final List<dynamic> activeJobs = _filterActiveJobs(jobs);
 
       if (activeJobs.isNotEmpty) {
         setState(() {
@@ -247,66 +216,116 @@ class _HomePageState extends State<HomePage> {
           _hasRunningJob = true;
           _isLoadingJob = false;
         });
-
-        debugPrint(
-          '✅ [HomePage] Running job loaded: ${activeJobs.length} active',
-        );
       } else {
         setState(() {
           _hasRunningJob = false;
           _runningJob = null;
           _isLoadingJob = false;
         });
-        debugPrint('ℹ️ [HomePage] No active running jobs');
       }
     } catch (e) {
       if (!mounted) return;
-
-      // Sanitize error message - remove URLs and sensitive info
-      String errorText = e.toString();
-
-      // Remove Exception prefix
-      if (errorText.startsWith('Exception: ')) {
-        errorText = errorText.substring(11);
-      }
-
-      // Remove any URLs from error messages
-      errorText = errorText.replaceAll(RegExp(r'https?://[^\s,)]+'), '[API]');
-      errorText = errorText.replaceAll(RegExp(r'uri=https?://[^\s,)]+'), '');
 
       setState(() {
         _hasRunningJob = false;
         _runningJob = null;
         _isLoadingJob = false;
-
-        // Provide user-friendly error messages without exposing infrastructure
-        if (errorText.contains('SocketException') ||
-            errorText.contains('Failed host lookup') ||
-            errorText.contains('No address associated')) {
-          _errorMessageJob =
-              'Unable to connect. Please check your internet connection.';
-        } else if (errorText.contains('not authenticated') ||
-            errorText.contains('Session token') ||
-            errorText.contains('Session expired')) {
-          _errorMessageJob = 'Session expired. Please login again.';
-        } else if (errorText.contains('401')) {
-          _errorMessageJob = 'Authentication failed. Please login again.';
-        } else if (errorText.toLowerCase().contains('timeout')) {
-          _errorMessageJob = 'Connection timeout. Please try again.';
-        } else if (errorText.contains('FormatException') ||
-            errorText.contains('parse')) {
-          _errorMessageJob = 'Unable to load data. Please try again.';
-        } else {
-          _errorMessageJob = 'Unable to load running jobs. Please try again.';
-        }
+        _errorMessageJob = _sanitizeErrorMessage(e.toString());
       });
 
-      // Log full error for debugging (this won't be shown to users)
-      debugPrint('❌ [HomePage] Error fetching running job: $e');
+      debugPrint(' [HomePage] Error fetching running job: $e');
     }
   }
 
-  // IMPROVED: Load local bookings with deduplication
+  /// Filter jobs to get only active ones
+  List<dynamic> _filterActiveJobs(List<dynamic> jobs) {
+    final DateTime now = DateTime.now();
+
+    return jobs.where((job) {
+      if (job == null || job is! Map) return false;
+
+      final String? deviceStatus = job['devicestatus']?.toString();
+      if (deviceStatus == "100") {
+        return false;
+      }
+
+      final String? endTimeString =
+          job['device_booked_user_end_time']?.toString();
+
+      if (endTimeString == null || endTimeString.isEmpty) {
+        return false;
+      }
+
+      try {
+        final DateTime endTime = DateTime.parse(endTimeString).toLocal();
+        return now.isBefore(endTime);
+      } catch (e) {
+        return false;
+      }
+    }).toList();
+  }
+
+  /// Fetch history with deduplication and amount preservation
+  Future<void> _fetchHistory({bool forceRefresh = true}) async {
+    if (!mounted) return;
+
+    if (!forceRefresh &&
+        _lastHistoryFetch != null &&
+        DateTime.now().difference(_lastHistoryFetch!) < _cacheValidDuration) {
+      debugPrint('[HomePage] Using cached history data');
+      return;
+    }
+
+    if (mounted) {
+      setState(() {
+        _isLoadingHistory = true;
+        _errorMessageHistory = '';
+      });
+    }
+
+    try {
+      // IMPROVEMENT 7: Fetch both API and local history in parallel
+      final results = await Future.wait([
+        HomeApi.getBookingHistory(),
+        _loadLocalBookings(),
+      ]);
+
+      if (!mounted) return;
+
+      final apiHistory = results[0] as List<dynamic>;
+      final localBookings = results[1] as List<Map<String, dynamic>>;
+
+      // Update cache timestamp
+      _lastHistoryFetch = DateTime.now();
+
+      // Merge and deduplicate
+      final mergedHistory = _mergeHistoryData(apiHistory, localBookings);
+
+      // Sort by end time (newest first) and take top 2
+      mergedHistory.sort(_compareByEndTime);
+      final displayHistory = mergedHistory.take(2).toList();
+
+      setState(() {
+        _historyList = displayHistory;
+        _isLoadingHistory = false;
+      });
+
+      debugPrint(
+          '[HomePage] Successfully loaded ${_historyList.length} history items');
+    } catch (e) {
+      if (!mounted) return;
+
+      setState(() {
+        _historyList = [];
+        _isLoadingHistory = false;
+        _errorMessageHistory = _sanitizeErrorMessage(e.toString());
+      });
+
+      debugPrint(' [HomePage] Error fetching history: $e');
+    }
+  }
+
+  /// Load local bookings from SharedPreferences
   Future<List<Map<String, dynamic>>> _loadLocalBookings() async {
     try {
       final prefs = await SharedPreferences.getInstance();
@@ -325,20 +344,138 @@ class _HomePageState extends State<HomePage> {
               localBookings.add(booking);
             }
           } catch (e) {
-            debugPrint('⚠️ [HomePage] Error parsing booking $key: $e');
+            debugPrint(' [HomePage] Error parsing booking $key: $e');
           }
         }
       }
 
-      debugPrint('📱 [HomePage] Loaded ${localBookings.length} local bookings');
       return localBookings;
     } catch (e) {
-      debugPrint('❌ [HomePage] Error loading local bookings: $e');
+      debugPrint(' [HomePage] Error loading local bookings: $e');
       return [];
     }
   }
 
-  // IMPROVED: Normalize timestamp for consistent comparison
+  /// Merge API history with local bookings, preserving amounts
+  List<Map<String, dynamic>> _mergeHistoryData(
+    List<dynamic> apiHistory,
+    List<Map<String, dynamic>> localBookings,
+  ) {
+    // Build local bookings map for O(1) lookup
+    final Map<String, Map<String, dynamic>> localBookingsMap = {};
+    for (var localItem in localBookings) {
+      final uniqueKey = _getUniqueBookingKey(
+        deviceId: localItem['deviceid']?.toString(),
+        endTime: localItem['endtime']?.toString(),
+      );
+      if (uniqueKey != null) {
+        localBookingsMap[uniqueKey] = localItem;
+      }
+    }
+
+    // Use map to ensure uniqueness
+    Map<String, Map<String, dynamic>> uniqueBookings = {};
+
+    for (var apiItem in apiHistory) {
+      if (apiItem == null || apiItem is! Map) continue;
+
+      final apiMap = apiItem is Map<String, dynamic>
+          ? apiItem
+          : Map<String, dynamic>.from(apiItem);
+
+      final uniqueKey = _getUniqueBookingKey(
+        deviceId: apiMap['deviceid']?.toString(),
+        endTime: apiMap['device_booked_user_end_time']?.toString(),
+      );
+
+      if (uniqueKey == null) continue;
+
+      double currentAmount = double.tryParse(
+            (apiMap['transactionamount'] ?? apiMap['booked_user_amount'] ?? '0')
+                .toString(),
+          ) ??
+          0.0;
+
+      if (currentAmount == 0 && localBookingsMap.containsKey(uniqueKey)) {
+        final localAmount = double.tryParse(
+              (localBookingsMap[uniqueKey]!['amount'] ?? '0').toString(),
+            ) ??
+            0.0;
+
+        if (localAmount > 0) {
+          apiMap['booked_user_amount'] = localAmount;
+          apiMap['transactionamount'] = localAmount;
+          currentAmount = localAmount;
+        }
+      }
+
+      //  IMPROVEMENT 9: Copy hubid/hubname from local if missing in API
+      if ((apiMap['hubid'] == null || apiMap['hubid'].toString().isEmpty) &&
+          localBookingsMap.containsKey(uniqueKey)) {
+        final localHub = localBookingsMap[uniqueKey];
+        if (localHub!['hubid'] != null) {
+          apiMap['hubid'] = localHub['hubid'];
+        }
+        if (localHub['hubname'] != null) {
+          apiMap['hubname'] = localHub['hubname'];
+        }
+      }
+
+      // Add or replace if better data
+      if (uniqueBookings.containsKey(uniqueKey)) {
+        final existingAmount = double.tryParse(
+              (uniqueBookings[uniqueKey]!['booked_user_amount'] ?? '0')
+                  .toString(),
+            ) ??
+            0.0;
+
+        if (currentAmount > 0 && existingAmount == 0) {
+          uniqueBookings[uniqueKey] = apiMap;
+        }
+      } else {
+        uniqueBookings[uniqueKey] = apiMap;
+      }
+    }
+
+    // Add local-only bookings
+    for (var entry in localBookingsMap.entries) {
+      if (uniqueBookings.containsKey(entry.key)) continue;
+
+      final localItem = entry.value;
+      uniqueBookings[entry.key] = {
+        'deviceid': localItem['deviceid'],
+        'hubname': localItem['hubname'],
+        'hubid': localItem['hubid'],
+        'machineid': localItem['machineid'],
+        'devicetype': localItem['devicetype'] ?? 'Device',
+        'booked_user_amount': localItem['amount'],
+        'transactionamount': localItem['amount'],
+        'device_booked_user_end_time': localItem['endtime'],
+        'device_booked_user_start_time': localItem['starttime'],
+        '_source': 'local_only',
+      };
+    }
+
+    return uniqueBookings.values.toList();
+  }
+
+  /// Generate unique key for booking (deviceId + normalized endTime)
+  String? _getUniqueBookingKey({
+    required String? deviceId,
+    required String? endTime,
+  }) {
+    if (deviceId == null ||
+        deviceId.isEmpty ||
+        endTime == null ||
+        endTime.isEmpty) {
+      return null;
+    }
+
+    final normalizedEndTime = _normalizeTimestamp(endTime);
+    return '${deviceId}_$normalizedEndTime';
+  }
+
+  /// Normalize timestamp for consistent comparison
   String _normalizeTimestamp(String timestamp) {
     if (timestamp.isEmpty) return '';
 
@@ -346,207 +483,62 @@ class _HomePageState extends State<HomePage> {
       final dt = DateTime.parse(timestamp);
       return '${dt.year.toString().padLeft(4, '0')}-${dt.month.toString().padLeft(2, '0')}-${dt.day.toString().padLeft(2, '0')}T${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}:${dt.second.toString().padLeft(2, '0')}Z';
     } catch (e) {
-      debugPrint('⚠️ [HomePage] Could not normalize timestamp: $timestamp');
       return timestamp;
     }
   }
 
-  Future<void> _fetchHistory() async {
-    if (!mounted) return;
-
-    setState(() {
-      _isLoadingHistory = true;
-      _errorMessageHistory = '';
-    });
-
+  int _compareByEndTime(Map<String, dynamic> a, Map<String, dynamic> b) {
     try {
-      // Fetch both API and local history
-      final apiHistory = await HomeApi.getBookingHistory();
-      final localBookings = await _loadLocalBookings();
+      final aTimeStr = (a['device_booked_user_end_time'] ?? '').toString();
+      final bTimeStr = (b['device_booked_user_end_time'] ?? '').toString();
 
-      if (!mounted) return;
+      if (aTimeStr.isEmpty) return 1;
+      if (bTimeStr.isEmpty) return -1;
 
-      debugPrint('========== HISTORY MERGE PROCESS ==========');
-      debugPrint('📊 API history: ${apiHistory.length} items');
-      debugPrint('📱 Local bookings: ${localBookings.length} items');
+      final aDate = DateTime.parse(aTimeStr);
+      final bDate = DateTime.parse(bTimeStr);
 
-      // Use map to ensure uniqueness by deviceId + endTime
-      Map<String, Map<String, dynamic>> uniqueBookings = {};
-
-      // Process API history first (API takes priority)
-      for (var apiItem in apiHistory) {
-        final deviceId = (apiItem['deviceid'] ?? '').toString();
-        final endTimeRaw = (apiItem['device_booked_user_end_time'] ?? '')
-            .toString();
-
-        if (deviceId.isEmpty || endTimeRaw.isEmpty) continue;
-
-        final normalizedEndTime = _normalizeTimestamp(endTimeRaw);
-        final uniqueKey = '${deviceId}_$normalizedEndTime';
-
-        // Get amount, prefer non-zero values
-        final currentAmount =
-            double.tryParse(
-              (apiItem['booked_user_amount'] ?? '0').toString(),
-            ) ??
-            0.0;
-
-        if (uniqueBookings.containsKey(uniqueKey)) {
-          final existingAmount =
-              double.tryParse(
-                (uniqueBookings[uniqueKey]!['booked_user_amount'] ?? '0')
-                    .toString(),
-              ) ??
-              0.0;
-
-          // Replace if current has non-zero amount and existing is zero
-          if (currentAmount > 0 && existingAmount == 0) {
-            uniqueBookings[uniqueKey] = apiItem;
-            debugPrint('✅ Replaced with non-zero amount: $uniqueKey');
-          }
-          continue;
-        }
-
-        // If API amount is 0, try to find matching local booking
-        if (currentAmount == 0) {
-          for (var localItem in localBookings) {
-            final localDeviceId = (localItem['deviceid'] ?? '').toString();
-            final localEndTime = _normalizeTimestamp(
-              (localItem['endtime'] ?? '').toString(),
-            );
-
-            if (localDeviceId == deviceId &&
-                localEndTime == normalizedEndTime) {
-              final localAmount =
-                  double.tryParse((localItem['amount'] ?? '0').toString()) ??
-                  0.0;
-
-              if (localAmount > 0) {
-                apiItem['booked_user_amount'] = localAmount;
-                debugPrint(
-                  '💰 Using local amount ₹$localAmount for $uniqueKey',
-                );
-              }
-              break;
-            }
-          }
-        }
-
-        uniqueBookings[uniqueKey] = apiItem;
-      }
-
-      // Add local-only bookings (not in API)
-      for (var localItem in localBookings) {
-        final deviceId = (localItem['deviceid'] ?? '').toString();
-        final endTimeRaw = (localItem['endtime'] ?? '').toString();
-
-        if (deviceId.isEmpty || endTimeRaw.isEmpty) continue;
-
-        final normalizedEndTime = _normalizeTimestamp(endTimeRaw);
-        final uniqueKey = '${deviceId}_$normalizedEndTime';
-
-        if (uniqueBookings.containsKey(uniqueKey)) continue;
-
-        // Normalize local booking to match API format
-        uniqueBookings[uniqueKey] = {
-          'deviceid': localItem['deviceid'],
-          'hubname': localItem['hubname'],
-          'hubid': localItem['hubid'],
-          'machineid': localItem['machineid'],
-          'devicetype': localItem['devicetype'] ?? 'Device',
-          'booked_user_amount': localItem['amount'],
-          'device_booked_user_end_time': localItem['endtime'],
-          'device_booked_user_start_time': localItem['starttime'],
-          '_source': 'local_only',
-        };
-
-        debugPrint('📱 Added local-only: $uniqueKey');
-      }
-
-      // Convert to list and sort by end time (newest first)
-      List<Map<String, dynamic>> mergedHistory = uniqueBookings.values.toList();
-
-      mergedHistory.sort((a, b) {
-        try {
-          final aTimeStr = (a['device_booked_user_end_time'] ?? '').toString();
-          final bTimeStr = (b['device_booked_user_end_time'] ?? '').toString();
-
-          if (aTimeStr.isEmpty) return 1;
-          if (bTimeStr.isEmpty) return -1;
-
-          final aDate = DateTime.parse(aTimeStr);
-          final bDate = DateTime.parse(bTimeStr);
-
-          return bDate.compareTo(aDate);
-        } catch (e) {
-          debugPrint('⚠️ [HomePage] Error sorting: $e');
-          return 0;
-        }
-      });
-
-      debugPrint('✅ Total unique bookings: ${mergedHistory.length}');
-      debugPrint('📋 Taking top 2 for display');
-      debugPrint('========================================');
-
-      setState(() {
-        _historyList = mergedHistory.take(2).toList();
-        _isLoadingHistory = false;
-      });
-
-      debugPrint(
-        '✅ [HomePage] Successfully loaded ${_historyList.length} history items',
-      );
+      return bDate.compareTo(aDate);
     } catch (e) {
-      if (!mounted) return;
-
-      // Sanitize error message - remove URLs and technical details
-      String errorText = e.toString();
-
-      // Remove Exception prefix
-      if (errorText.startsWith('Exception: ')) {
-        errorText = errorText.substring(11);
-      }
-
-      // Remove URLs, URIs, and other sensitive info
-      errorText = errorText.replaceAll(RegExp(r'https?://[^\s,)]+'), '');
-      errorText = errorText.replaceAll(RegExp(r'uri=https?://[^\s,)]+'), '');
-      errorText = errorText.replaceAll(RegExp(r'\(OS Error[^)]*\)'), '');
-
-      setState(() {
-        _historyList = [];
-        _isLoadingHistory = false;
-
-        // Provide user-friendly error messages
-        if (errorText.contains('ClientException') ||
-            errorText.contains('SocketException') ||
-            errorText.contains('Failed host lookup') ||
-            errorText.contains('No address associated') ||
-            errorText.contains('errno = 7')) {
-          _errorMessageHistory =
-              'Unable to connect. Please check your internet connection.';
-        } else if (errorText.contains('404')) {
-          _errorMessageHistory = '';
-        } else if (errorText.contains('not authenticated') ||
-            errorText.contains('Mobile number not found') ||
-            errorText.contains('Session token not found')) {
-          _errorMessageHistory = 'Session expired. Please login again.';
-        } else if (errorText.contains('Authentication failed') ||
-            errorText.contains('401')) {
-          _errorMessageHistory = 'Authentication failed. Please login again.';
-        } else if (errorText.toLowerCase().contains('timeout')) {
-          _errorMessageHistory = 'Connection timeout. Please try again.';
-        } else {
-          _errorMessageHistory = 'Unable to load history. Please try again.';
-        }
-      });
-
-      // Log full error for debugging (won't be shown to users)
-      debugPrint('❌ [HomePage] Error fetching history: $e');
+      return 0;
     }
   }
 
-  Future<void> _onRefresh() async {
-    await Future.wait([_fetchRunningJob(), _fetchHistory()]);
+  // ============================================================================
+  // UTILITY METHODS
+  // ==========================================================================
+
+  /// Sanitize error message for user display
+  String _sanitizeErrorMessage(String error) {
+    String errorText = error;
+
+    if (errorText.startsWith('Exception: ')) {
+      errorText = errorText.substring(11);
+    }
+
+    errorText = errorText.replaceAll(RegExp(r'https?://[^\s,)]+'), '');
+    errorText = errorText.replaceAll(RegExp(r'uri=https?://[^\s,)]+'), '');
+    errorText = errorText.replaceAll(RegExp(r'\(OS Error[^)]*\)'), '');
+
+    if (errorText.contains('SocketException') ||
+        errorText.contains('Failed host lookup') ||
+        errorText.contains('No address associated') ||
+        errorText.contains('errno = 7')) {
+      return 'Unable to connect. Please check your internet connection.';
+    } else if (errorText.contains('not authenticated') ||
+        errorText.contains('Session token') ||
+        errorText.contains('Session expired') ||
+        errorText.contains('Mobile number not found')) {
+      return 'Session expired. Please login again.';
+    } else if (errorText.contains('401')) {
+      return 'Authentication failed. Please login again.';
+    } else if (errorText.toLowerCase().contains('timeout')) {
+      return 'Connection timeout. Please try again.';
+    } else if (errorText.contains('404')) {
+      return '';
+    } else {
+      return 'Unable to load data. Please try again.';
+    }
   }
 
   String _formatDateTime(String dateTimeString) {
@@ -556,56 +548,113 @@ class _HomePageState extends State<HomePage> {
       final dateTime = DateTime.parse(dateTimeString).toLocal();
       return DateFormat('dd/MM/yyyy hh:mm a').format(dateTime);
     } catch (e) {
-      debugPrint('⚠️ [HomePage] Error formatting date: $e');
       return dateTimeString;
     }
   }
 
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: const Color(0xFFFAFAFA),
-      appBar: AppBar(
-        backgroundColor: const Color(0xFFFFFFFF),
-        elevation: 0,
-        automaticallyImplyLeading: false,
-        title: const Text(
-          'QK WASH',
-          style: TextStyle(
-            fontSize: 24,
-            fontWeight: FontWeight.bold,
-            color: Color(0xFF2196F3),
+  Future<void> _onRefresh() async {
+    await Future.wait([
+      _fetchRunningJob(forceRefresh: true),
+      _fetchHistory(forceRefresh: true),
+    ]);
+  }
+
+  // =============================
+  // NAVIGATION
+  // ====================================
+
+  /// Navigate to hub details page
+  Future<void> _navigateToHub(Map<String, dynamic> booking) async {
+    // IMPROVEMENT 10: Prevent multiple simultaneous navigations
+    if (_isNavigating) return;
+
+    final hubId = booking['hubid']?.toString();
+    final hubName = booking['hubname']?.toString();
+
+    // IMPROVEMENT 11: Better validation
+    if (hubId == null || hubId.isEmpty || hubId == 'null') {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Hub information not available'),
+            backgroundColor: Color(0xFFF44336),
+            duration: Duration(seconds: 2),
+          ),
+        );
+      }
+      return;
+    }
+
+    _isNavigating = true;
+
+    if (mounted) {
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => const Center(
+          child: CircularProgressIndicator(
+            valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF2196F3)),
           ),
         ),
-        actions: [
-          IconButton(
-            icon: const Icon(
-              Icons.notifications_outlined,
-              color: Color(0xFF000000),
-            ),
+      );
+    }
+
+    try {
+      final devices = await HomeApi.getHubDetails(hubId: hubId);
+
+      if (!mounted) return;
+
+      Navigator.pop(context);
+
+      await Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => MachineListPage(
+            hubId: hubId,
+            hubName: hubName ?? 'Unknown Hub',
+            devices: devices,
+          ),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+
+      Navigator.pop(context);
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text('Failed to load hub details'),
+          backgroundColor: const Color(0xFFF44336),
+          duration: const Duration(seconds: 2),
+          action: SnackBarAction(
+            label: 'Retry',
+            textColor: Colors.white,
             onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (_) => const NotificationPage()),
-              );
+              _isNavigating = false;
+              _navigateToHub(booking);
             },
           ),
-          IconButton(
-            icon: const Icon(
-              Icons.card_giftcard_outlined,
-              color: Color(0xFF000000),
-            ),
-            onPressed: () {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Rewards coming soon!')),
-              );
-            },
-          ),
-          const SizedBox(width: 8),
-        ],
-      ),
+        ),
+      );
+    } finally {
+      _isNavigating = false;
+    }
+  }
+
+  // ============================================================================
+  // UI BUILD METHODS
+  // ================================================================
+
+  @override
+  Widget build(BuildContext context) {
+    super.build(context); // Required for AutomaticKeepAliveClientMixin
+
+    return Scaffold(
+      backgroundColor: const Color(0xFFFAFAFA),
+      appBar: _buildAppBar(),
       body: RefreshIndicator(
         onRefresh: _onRefresh,
+        color: const Color(0xFF2196F3),
         child: SingleChildScrollView(
           physics: const AlwaysScrollableScrollPhysics(),
           child: Column(
@@ -618,13 +667,7 @@ class _HomePageState extends State<HomePage> {
               const SizedBox(height: 16),
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 16),
-                child: _isLoadingJob
-                    ? _buildLoadingCard()
-                    : _errorMessageJob.isNotEmpty
-                    ? _buildErrorCard(_errorMessageJob, _fetchRunningJob)
-                    : _hasRunningJob
-                    ? _buildRunningJobCard()
-                    : _buildEmptyRunningJobCard(),
+                child: _buildRunningJobsSection(),
               ),
               const SizedBox(height: 24),
               _buildHistorySection(),
@@ -633,6 +676,48 @@ class _HomePageState extends State<HomePage> {
           ),
         ),
       ),
+    );
+  }
+
+  PreferredSizeWidget _buildAppBar() {
+    return AppBar(
+      backgroundColor: const Color(0xFFFFFFFF),
+      elevation: 0,
+      automaticallyImplyLeading: false,
+      title: const Text(
+        'QK WASH',
+        style: TextStyle(
+          fontSize: 24,
+          fontWeight: FontWeight.bold,
+          color: Color(0xFF2196F3),
+        ),
+      ),
+      actions: [
+        IconButton(
+          icon: const Icon(
+            Icons.notifications_outlined,
+            color: Color(0xFF000000),
+          ),
+          onPressed: () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const NotificationPage()),
+            );
+          },
+        ),
+        IconButton(
+          icon: const Icon(
+            Icons.card_giftcard_outlined,
+            color: Color(0xFF000000),
+          ),
+          onPressed: () {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('Rewards coming soon!')),
+            );
+          },
+        ),
+        const SizedBox(width: 8),
+      ],
     );
   }
 
@@ -688,6 +773,23 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
+  Widget _buildRunningJobsSection() {
+    if (_isLoadingJob) {
+      return _buildLoadingCard();
+    }
+
+    if (_errorMessageJob.isNotEmpty) {
+      return _buildErrorCard(
+          _errorMessageJob, () => _fetchRunningJob(forceRefresh: true));
+    }
+
+    if (_hasRunningJob) {
+      return _buildRunningJobCard();
+    }
+
+    return _buildEmptyRunningJobCard();
+  }
+
   Widget _buildLoadingCard() {
     return Container(
       padding: const EdgeInsets.all(16),
@@ -705,7 +807,9 @@ class _HomePageState extends State<HomePage> {
       child: const Center(
         child: Padding(
           padding: EdgeInsets.all(32.0),
-          child: CircularProgressIndicator(),
+          child: CircularProgressIndicator(
+            valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF2196F3)),
+          ),
         ),
       ),
     );
@@ -767,12 +871,10 @@ class _HomePageState extends State<HomePage> {
         endTime = DateFormat('hh:mm a').format(endTimeDate);
       } catch (e) {
         endTime = '--:--';
-        debugPrint('⚠️ [HomePage] Error parsing end time: $e');
       }
     }
 
     double progress = _getProgress(_runningJob!);
-
     String statusText = 'Running ( $deviceStatus% completed )';
 
     return Container(
@@ -986,20 +1088,23 @@ class _HomePageState extends State<HomePage> {
                 child: _buildLoadingCard(),
               )
             : _errorMessageHistory.isNotEmpty
-            ? Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                child: _buildErrorCard(_errorMessageHistory, _fetchHistory),
-              )
-            : _historyList.isEmpty
-            ? Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                child: _buildEmptyHistoryCard(),
-              )
-            : Column(
-                children: _historyList.map((booking) {
-                  return _buildHistoryItem(booking);
-                }).toList(),
-              ),
+                ? Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    child: _buildErrorCard(
+                      _errorMessageHistory,
+                      () => _fetchHistory(forceRefresh: true),
+                    ),
+                  )
+                : _historyList.isEmpty
+                    ? Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                        child: _buildEmptyHistoryCard(),
+                      )
+                    : Column(
+                        children: _historyList.map((booking) {
+                          return _buildHistoryItem(booking);
+                        }).toList(),
+                      ),
       ],
     );
   }
@@ -1040,74 +1145,15 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  Future<void> _navigateToHub(Map<String, dynamic> booking) async {
-    final hubId = booking['hubid']?.toString();
-    final hubName = booking['hubname']?.toString();
-
-    if (hubId == null || hubId.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Hub information not available'),
-          backgroundColor: Color(0xFFF44336),
-        ),
-      );
-      return;
-    }
-
-    // Show loading indicator
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (context) => const Center(
-        child: CircularProgressIndicator(
-          valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF2196F3)),
-        ),
-      ),
-    );
-
-    try {
-      // Fetch hub details
-      final devices = await HomeApi.getHubDetails(hubId: hubId);
-
-      if (!mounted) return;
-
-      // Close loading dialog
-      Navigator.pop(context);
-
-      // Navigate to machine list
-      Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (context) => MachineListPage(
-            hubId: hubId,
-            hubName: hubName ?? 'Unknown Hub',
-            devices: devices,
-          ),
-        ),
-      );
-    } catch (e) {
-      if (!mounted) return;
-
-      // Close loading dialog
-      Navigator.pop(context);
-
-      // Show error message
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Failed to load hub details: ${e.toString()}'),
-          backgroundColor: const Color(0xFFF44336),
-        ),
-      );
-    }
-  }
-
   Widget _buildHistoryItem(Map<String, dynamic> booking) {
     final hubName = booking['hubname']?.toString() ?? 'Unknown Hub';
     final deviceType = booking['devicetype']?.toString() ?? 'Device';
     final deviceId = booking['deviceid']?.toString() ?? 'N/A';
     final endTime = booking['device_booked_user_end_time']?.toString() ?? '';
 
-    final amountValue = booking['booked_user_amount'];
+    //  Get amount with fallback
+    final amountValue =
+        booking['transactionamount'] ?? booking['booked_user_amount'];
     final amount = amountValue?.toString() ?? '0';
 
     return Padding(

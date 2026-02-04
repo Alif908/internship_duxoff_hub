@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:internship_duxoff_hub/services/home_api_service.dart';
+import 'package:internship_duxoff_hub/services/notification_service.dart';
 import 'package:internship_duxoff_hub/views/home%20screen/qrscanning/machinelist_page.dart';
 import 'package:intl/intl.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -15,24 +16,115 @@ class WashHistoryPage extends StatefulWidget {
 class _WashHistoryPageState extends State<WashHistoryPage> {
   List<Map<String, dynamic>> _historyList = [];
   List<Map<String, dynamic>> _filteredHistoryList = [];
-
   bool _isLoading = true;
   String _errorMessage = '';
   String _searchQuery = '';
   String _selectedFilter = 'All';
 
+  final NotificationService _notificationService = NotificationService();
+
+  // Track which jobs have had completion notifications sent
+  static const String _prefNotificationSent = 'completion_notification_sent_';
+
   @override
   void initState() {
     super.initState();
+    _initializeNotifications();
     _cleanupDuplicateLocalBookings();
     _loadHistory();
+  }
+
+  Future<void> _initializeNotifications() async {
+    try {
+      await _notificationService.initialize();
+      debugPrint(' Notifications initialized in WashHistoryPage');
+    } catch (e) {
+      debugPrint(' Error initializing notifications: $e');
+    }
+  }
+
+  /// Check if completion notification was sent for this job
+  Future<bool> _wasCompletionNotificationSent(
+      String deviceId, String endTime) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final key = '$_prefNotificationSent${deviceId}_$endTime';
+      return prefs.getBool(key) ?? false;
+    } catch (e) {
+      debugPrint('❌ Error checking notification status: $e');
+      return false;
+    }
+  }
+
+  Future<void> _markCompletionNotificationSent(
+      String deviceId, String endTime) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final key = '$_prefNotificationSent${deviceId}_$endTime';
+      await prefs.setBool(key, true);
+      debugPrint('Marked completion notification sent: $key');
+    } catch (e) {
+      debugPrint(' Error marking notification sent: $e');
+    }
+  }
+
+  Future<void> _sendCompletionNotificationForNewJobs(
+      List<Map<String, dynamic>> localBookings) async {
+    try {
+      for (var booking in localBookings) {
+        final deviceId = (booking['deviceid'] ?? '').toString();
+        final endTime = (booking['endtime'] ?? '').toString();
+
+        if (deviceId.isEmpty || endTime.isEmpty) continue;
+
+        if (!await _wasCompletionNotificationSent(deviceId, endTime)) {
+          try {
+            final timestamp = booking['timestamp']?.toString();
+            if (timestamp != null && timestamp.isNotEmpty) {
+              final completedAt = DateTime.parse(timestamp);
+              final now = DateTime.now();
+              final diff = now.difference(completedAt);
+
+              if (diff.inMinutes <= 5) {
+                debugPrint('  NEW COMPLETED JOB DETECTED IN HISTORY!');
+                debugPrint('   Device: $deviceId');
+                debugPrint('   Completed: ${diff.inSeconds}s ago');
+                debugPrint('   Sending completion notification...');
+
+                final jobData = {
+                  'deviceid': booking['deviceid'],
+                  'hubname': booking['hubname'],
+                  'hubid': booking['hubid'],
+                  'device_booked_user_end_time': booking['endtime'],
+                  'device_booked_user_start_time': booking['starttime'],
+                  'booked_user_selected_wash_mode': booking['washmode'],
+                  'booked_user_selected_duration': booking['washtime'],
+                  'booked_user_amount': booking['amount'],
+                };
+
+                await _notificationService.showCompletionNotification(jobData);
+                await _markCompletionNotificationSent(deviceId, endTime);
+
+                debugPrint(' Completion notification sent for job in history');
+              } else {
+                debugPrint(
+                    ' Job completed ${diff.inMinutes} min ago - skipping notification');
+              }
+            }
+          } catch (e) {
+            debugPrint(' Error checking job timestamp: $e');
+          }
+        }
+      }
+    } catch (e) {
+      debugPrint(' Error sending completion notifications: $e');
+    }
   }
 
   Future<void> _cleanupDuplicateLocalBookings() async {
     try {
       final prefs = await SharedPreferences.getInstance();
       final allKeys = prefs.getKeys();
-
       Map<String, String> uniqueBookings = {};
       List<String> keysToRemove = [];
 
@@ -51,7 +143,7 @@ class _WashHistoryPageState extends State<WashHistoryPage> {
                 if (uniqueBookings.containsKey(uniqueKey)) {
                   keysToRemove.add(key);
                   debugPrint(
-                    '🗑️ Marking duplicate local booking for removal: $key',
+                    ' Marking duplicate local booking for removal: $key',
                   );
                 } else {
                   uniqueBookings[uniqueKey] = key;
@@ -69,7 +161,7 @@ class _WashHistoryPageState extends State<WashHistoryPage> {
       }
 
       if (keysToRemove.isNotEmpty) {
-        debugPrint('✅ Removed ${keysToRemove.length} duplicate local bookings');
+        debugPrint(' Removed ${keysToRemove.length} duplicate local bookings');
       }
     } catch (e) {
       debugPrint('Error in cleanup: $e');
@@ -80,7 +172,6 @@ class _WashHistoryPageState extends State<WashHistoryPage> {
     try {
       final prefs = await SharedPreferences.getInstance();
       final allKeys = prefs.getKeys();
-
       List<Map<String, dynamic>> localBookings = [];
 
       for (String key in allKeys) {
@@ -89,10 +180,8 @@ class _WashHistoryPageState extends State<WashHistoryPage> {
             final bookingJson = prefs.getString(key);
             if (bookingJson != null && bookingJson.isNotEmpty) {
               final booking = jsonDecode(bookingJson) as Map<String, dynamic>;
-
               booking['_source'] = 'local';
               booking['_key'] = key;
-
               localBookings.add(booking);
               debugPrint(
                 'Loaded local booking: $key with amount: ${booking['amount']}',
@@ -124,6 +213,8 @@ class _WashHistoryPageState extends State<WashHistoryPage> {
       final apiHistory = await HomeApi.getBookingHistory();
       final localBookings = await _loadLocalBookings();
 
+      await _sendCompletionNotificationForNewJobs(localBookings);
+
       if (!mounted) return;
 
       debugPrint('========== DEDUPLICATION PROCESS ==========');
@@ -132,7 +223,6 @@ class _WashHistoryPageState extends State<WashHistoryPage> {
 
       Map<String, Map<String, dynamic>> uniqueBookings = {};
 
-      // Process API history first (API data takes priority)
       for (var apiItem in apiHistory) {
         final deviceId = (apiItem['deviceid'] ?? '').toString();
         final endTimeRaw =
@@ -140,49 +230,63 @@ class _WashHistoryPageState extends State<WashHistoryPage> {
                 .toString();
 
         if (deviceId.isEmpty || endTimeRaw.isEmpty) {
-          debugPrint('⚠️ Skipping API item with missing deviceId or endTime');
+          debugPrint('Skipping API item with missing deviceId or endTime');
           continue;
         }
 
-        // Normalize timestamp
         String normalizedEndTime = endTimeRaw;
         try {
           final dt = DateTime.parse(endTimeRaw);
           normalizedEndTime =
               '${dt.year.toString().padLeft(4, '0')}-${dt.month.toString().padLeft(2, '0')}-${dt.day.toString().padLeft(2, '0')}T${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}:${dt.second.toString().padLeft(2, '0')}Z';
         } catch (e) {
-          debugPrint('⚠️ Could not parse timestamp: $endTimeRaw');
+          debugPrint(' Could not parse timestamp: $endTimeRaw');
         }
 
         final uniqueKey = '${deviceId}_$normalizedEndTime';
 
-        final currentAmount = double.tryParse(
-              (apiItem['booked_user_amount'] ?? '0').toString(),
-            ) ??
-            0.0;
+        double apiAmount = 0.0;
+
+        if (apiItem.containsKey('transactionamount') &&
+            apiItem['transactionamount'] != null) {
+          apiAmount =
+              double.tryParse(apiItem['transactionamount'].toString()) ?? 0.0;
+          debugPrint('Found transactionamount for $uniqueKey: ₹$apiAmount');
+        }
+
+        if (apiAmount == 0.0 &&
+            apiItem.containsKey('booked_user_amount') &&
+            apiItem['booked_user_amount'] != null) {
+          apiAmount =
+              double.tryParse(apiItem['booked_user_amount'].toString()) ?? 0.0;
+          debugPrint('Using booked_user_amount for $uniqueKey: ₹$apiAmount');
+        }
 
         if (uniqueBookings.containsKey(uniqueKey)) {
+          final existingItem = uniqueBookings[uniqueKey]!;
           final existingAmount = double.tryParse(
-                (uniqueBookings[uniqueKey]!['booked_user_amount'] ?? '0')
+                (existingItem['transactionamount'] ??
+                        existingItem['booked_user_amount'] ??
+                        '0')
                     .toString(),
               ) ??
               0.0;
 
-          if (currentAmount > 0 && existingAmount == 0) {
+          if (apiAmount > 0 && existingAmount == 0) {
             uniqueBookings[uniqueKey] = apiItem;
             debugPrint(
-              '✅ REPLACED duplicate with non-zero amount: $uniqueKey (₹$currentAmount replaces ₹$existingAmount)',
+              'REPLACED duplicate with non-zero amount: $uniqueKey (₹$apiAmount replaces ₹$existingAmount)',
             );
           } else {
             debugPrint(
-              '⚠️ Duplicate found, keeping existing: $uniqueKey (existing: ₹$existingAmount, new: ₹$currentAmount)',
+              'Duplicate found, keeping existing: $uniqueKey (existing: ₹$existingAmount, new: ₹$apiAmount)',
             );
           }
           continue;
         }
 
         // Find matching local booking to get amount if API amount is 0
-        if (currentAmount == 0) {
+        if (apiAmount == 0) {
           Map<String, dynamic>? matchingLocal;
           for (var localItem in localBookings) {
             final localDeviceId = (localItem['deviceid'] ?? '').toString();
@@ -207,25 +311,41 @@ class _WashHistoryPageState extends State<WashHistoryPage> {
                 double.tryParse((matchingLocal['amount'] ?? '0').toString()) ??
                     0.0;
             if (localAmount > 0) {
+              apiItem['transactionamount'] = localAmount;
               apiItem['booked_user_amount'] = localAmount;
-              debugPrint('✅ Using local amount ₹$localAmount for $uniqueKey');
+              debugPrint('Using local amount ₹$localAmount for $uniqueKey');
+            }
+
+            if ((apiItem['hubid'] == null ||
+                    apiItem['hubid'].toString().isEmpty) &&
+                matchingLocal['hubid'] != null) {
+              apiItem['hubid'] = matchingLocal['hubid'];
+              debugPrint(' Copied hubid from local: ${matchingLocal['hubid']}');
+            }
+            if ((apiItem['hubname'] == null ||
+                    apiItem['hubname'].toString().isEmpty) &&
+                matchingLocal['hubname'] != null) {
+              apiItem['hubname'] = matchingLocal['hubname'];
+              debugPrint(
+                  ' Copied hubname from local: ${matchingLocal['hubname']}');
             }
           }
         }
 
         uniqueBookings[uniqueKey] = apiItem;
+        final displayAmount =
+            apiItem['transactionamount'] ?? apiItem['booked_user_amount'] ?? 0;
         debugPrint(
-          '✅ Added from API: $uniqueKey (₹${apiItem['booked_user_amount']})',
+          'Added from API: $uniqueKey (₹$displayAmount)',
         );
       }
 
-      // Process local-only bookings (not in API)
       for (var localItem in localBookings) {
         final deviceId = (localItem['deviceid'] ?? '').toString();
         final endTimeRaw = (localItem['endtime'] ?? '').toString();
 
         if (deviceId.isEmpty || endTimeRaw.isEmpty) {
-          debugPrint('⚠️ Skipping local item with missing deviceId or endTime');
+          debugPrint(' Skipping local item with missing deviceId or endTime');
           continue;
         }
 
@@ -235,22 +355,22 @@ class _WashHistoryPageState extends State<WashHistoryPage> {
           normalizedEndTime =
               '${dt.year.toString().padLeft(4, '0')}-${dt.month.toString().padLeft(2, '0')}-${dt.day.toString().padLeft(2, '0')}T${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}:${dt.second.toString().padLeft(2, '0')}Z';
         } catch (e) {
-          debugPrint('⚠️ Could not parse timestamp: $endTimeRaw');
+          debugPrint(' Could not parse timestamp: $endTimeRaw');
         }
 
         final uniqueKey = '${deviceId}_$normalizedEndTime';
 
         if (uniqueBookings.containsKey(uniqueKey)) {
-          debugPrint('⚠️ Local booking already in API: $uniqueKey - SKIPPING');
+          debugPrint(' Local booking already in API: $uniqueKey - SKIPPING');
           continue;
         }
 
-        // Normalize local booking to match API format
         final normalizedLocal = {
           'deviceid': localItem['deviceid'],
           'hubname': localItem['hubname'],
           'hubid': localItem['hubid'],
           'machineid': localItem['machineid'],
+          'transactionamount': localItem['amount'],
           'booked_user_amount': localItem['amount'],
           'device_booked_user_end_time': localItem['endtime'],
           'device_booked_user_start_time': localItem['starttime'],
@@ -262,10 +382,10 @@ class _WashHistoryPageState extends State<WashHistoryPage> {
         };
 
         uniqueBookings[uniqueKey] = normalizedLocal;
-        debugPrint('✅ Added local-only: $uniqueKey');
+        debugPrint('Added local-only: $uniqueKey');
       }
 
-      debugPrint('📊 Total unique bookings: ${uniqueBookings.length}');
+      debugPrint('Total unique bookings: ${uniqueBookings.length}');
 
       List<Map<String, dynamic>> mergedHistory = uniqueBookings.values.toList();
 
@@ -284,10 +404,9 @@ class _WashHistoryPageState extends State<WashHistoryPage> {
 
           final aDate = DateTime.parse(aTimeStr);
           final bDate = DateTime.parse(bTimeStr);
-
           return bDate.compareTo(aDate);
         } catch (e) {
-          debugPrint('⚠️ Error sorting: $e');
+          debugPrint('Error sorting: $e');
           return 0;
         }
       });
@@ -297,11 +416,13 @@ class _WashHistoryPageState extends State<WashHistoryPage> {
           i < (mergedHistory.length > 3 ? 3 : mergedHistory.length);
           i++) {
         final item = mergedHistory[i];
+        final amt =
+            item['transactionamount'] ?? item['booked_user_amount'] ?? 0;
         debugPrint(
-          '  [$i] Device: ${item['deviceid']}, Amount: ₹${item['booked_user_amount']}, Time: ${item['device_booked_user_end_time'] ?? item['endtime']}',
+          ' [$i] Device: ${item['deviceid']}, Amount: ₹$amt, Time: ${item['device_booked_user_end_time'] ?? item['endtime']}',
         );
         debugPrint(
-          '       HubId: ${item['hubid']}, HubName: ${item['hubname']}',
+          '     HubId: ${item['hubid']}, HubName: ${item['hubname']}',
         );
       }
       debugPrint('=====================================');
@@ -313,28 +434,21 @@ class _WashHistoryPageState extends State<WashHistoryPage> {
       });
 
       debugPrint(
-        '✅ Successfully loaded ${_historyList.length} unique history items',
+        ' Successfully loaded ${_historyList.length} unique history items',
       );
     } catch (e) {
       if (!mounted) return;
 
-      // Sanitize error message - remove URLs and technical details
       String errorText = e.toString();
-
-      // Remove Exception prefix
       if (errorText.startsWith('Exception: ')) {
         errorText = errorText.substring(11);
       }
-
-      // Remove URLs, URIs, and other sensitive info
       errorText = errorText.replaceAll(RegExp(r'https?://[^\s,)]+'), '');
       errorText = errorText.replaceAll(RegExp(r'uri=https?://[^\s,)]+'), '');
       errorText = errorText.replaceAll(RegExp(r'\(OS Error[^)]*\)'), '');
 
       setState(() {
         _isLoading = false;
-
-        // Provide user-friendly error messages
         if (errorText.contains('ClientException') ||
             errorText.contains('SocketException') ||
             errorText.contains('Failed host lookup') ||
@@ -361,8 +475,7 @@ class _WashHistoryPageState extends State<WashHistoryPage> {
         }
       });
 
-      // Log full error for debugging (won't be shown to users)
-      debugPrint('❌ Error loading history: $e');
+      debugPrint(' Error loading history: $e');
     }
   }
 
@@ -383,7 +496,6 @@ class _WashHistoryPageState extends State<WashHistoryPage> {
           final hubName = booking['hubname']?.toString().toLowerCase() ?? '';
           final deviceId = booking['deviceid']?.toString() ?? '';
           final query = _searchQuery.toLowerCase();
-
           matchesFilter = matchesFilter &&
               (hubName.contains(query) || deviceId.contains(query));
         }
@@ -406,7 +518,8 @@ class _WashHistoryPageState extends State<WashHistoryPage> {
         totalDryers++;
       }
 
-      final amount = booking['booked_user_amount'];
+      final amount =
+          booking['transactionamount'] ?? booking['booked_user_amount'];
       if (amount != null) {
         totalAmount += double.tryParse(amount.toString()) ?? 0;
       }
@@ -421,7 +534,6 @@ class _WashHistoryPageState extends State<WashHistoryPage> {
 
   String _formatDateTime(String dateTimeString) {
     if (dateTimeString.isEmpty) return 'N/A';
-
     try {
       final dateTime = DateTime.parse(dateTimeString).toLocal();
       return DateFormat('dd/MM/yyyy hh:mma').format(dateTime).toLowerCase();
@@ -440,7 +552,8 @@ class _WashHistoryPageState extends State<WashHistoryPage> {
     debugPrint('Hub Name: $hubName');
     debugPrint('Full booking data: $booking');
 
-    if (hubId == null || hubId.isEmpty) {
+    if (hubId == null || hubId.isEmpty || hubId == 'null') {
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Hub information not available'),
@@ -451,30 +564,24 @@ class _WashHistoryPageState extends State<WashHistoryPage> {
       return;
     }
 
-    // Show loading indicator
     showDialog(
       context: context,
       barrierDismissible: false,
       builder: (context) => const Center(
         child: CircularProgressIndicator(
-          valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF4A90E2)),
+          valueColor: AlwaysStoppedAnimation(Color(0xFF4A90E2)),
         ),
       ),
     );
 
     try {
-      // Fetch hub details
       debugPrint('Fetching hub details for hubId: $hubId');
       final devices = await HomeApi.getHubDetails(hubId: hubId);
-
-      debugPrint('✅ Successfully fetched ${devices.length} devices');
+      debugPrint('Successfully fetched ${devices.length} devices');
 
       if (!mounted) return;
-
-      // Close loading dialog
       Navigator.pop(context);
 
-      // Navigate to machine list
       await Navigator.push(
         context,
         MaterialPageRoute(
@@ -486,16 +593,12 @@ class _WashHistoryPageState extends State<WashHistoryPage> {
         ),
       );
 
-      debugPrint('✅ Navigation successful');
+      debugPrint('Navigation successful');
     } catch (e) {
-      debugPrint('❌ Navigation error: $e');
-
+      debugPrint('Navigation error: $e');
       if (!mounted) return;
-
-      // Close loading dialog
       Navigator.pop(context);
 
-      // Show error message
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('Failed to load hub: ${e.toString()}'),
@@ -509,7 +612,6 @@ class _WashHistoryPageState extends State<WashHistoryPage> {
         ),
       );
     }
-
     debugPrint('=======================================');
   }
 
@@ -544,7 +646,7 @@ class _WashHistoryPageState extends State<WashHistoryPage> {
     if (_isLoading) {
       return const Center(
         child: CircularProgressIndicator(
-          valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF4A90E2)),
+          valueColor: AlwaysStoppedAnimation(Color(0xFF4A90E2)),
         ),
       );
     }
@@ -579,14 +681,16 @@ class _WashHistoryPageState extends State<WashHistoryPage> {
         booking['endtime']?.toString() ??
         '';
 
-    final amountValue = booking['booked_user_amount'];
-    String amount = '0.00';
+    final amountValue =
+        booking['transactionamount'] ?? booking['booked_user_amount'];
+    double parsedAmount = 0.0;
     if (amountValue != null) {
-      final parsedAmount = double.tryParse(amountValue.toString()) ?? 0.0;
-      amount = parsedAmount.toStringAsFixed(2);
+      parsedAmount = double.tryParse(amountValue.toString()) ?? 0.0;
     }
+    final amount = parsedAmount.toStringAsFixed(2);
 
-    debugPrint('History Card - Hub ID: $hubId, Hub Name: $hubName');
+    debugPrint(
+        'History Card - Hub ID: $hubId, Hub Name: $hubName, Amount: ₹$amount');
 
     return GestureDetector(
       onTap: () {

@@ -36,14 +36,14 @@ class _OtpVerifyPageState extends State<OtpVerifyPage> {
   Timer? _timer;
 
   String? _storedOtp;
-  bool _hasAutoFilled = false; // Track if auto-fill has happened
+  bool _hasAutoFilled = false; 
 
   @override
   void initState() {
     super.initState();
     _startResendTimer();
     _loadStoredOtp();
-    _scheduleAutoFill(); // Schedule auto-fill after 3 seconds
+    _scheduleAutoFill(); 
   }
 
   @override
@@ -58,7 +58,7 @@ class _OtpVerifyPageState extends State<OtpVerifyPage> {
     super.dispose();
   }
 
-  /// AUTO-FILL OTP AFTER 3 SECONDS
+
   void _scheduleAutoFill() {
     Future.delayed(const Duration(seconds: 3), () {
       if (mounted && !_hasAutoFilled) {
@@ -67,7 +67,7 @@ class _OtpVerifyPageState extends State<OtpVerifyPage> {
     });
   }
 
-  /// Auto-fill the OTP from stored value
+ 
   void _autoFillOtp() async {
     final otpToFill = _storedOtp ?? widget.otpFromApi;
 
@@ -78,7 +78,7 @@ class _OtpVerifyPageState extends State<OtpVerifyPage> {
 
       debugPrint('🔄 Auto-filling OTP: $otpToFill');
 
-      // Fill each digit with a small animation delay
+      
       for (int i = 0; i < 4; i++) {
         await Future.delayed(Duration(milliseconds: 100 * i));
         if (mounted) {
@@ -86,7 +86,7 @@ class _OtpVerifyPageState extends State<OtpVerifyPage> {
         }
       }
 
-      // Wait 2 seconds then auto-submit
+
       await Future.delayed(const Duration(seconds: 2));
 
       if (mounted) {
@@ -211,9 +211,9 @@ class _OtpVerifyPageState extends State<OtpVerifyPage> {
       debugPrint('Name: ${widget.userName}');
 
       if (userId == 0) {
-        debugPrint('❌ CRITICAL: User ID is still 0!');
-        debugPrint('❌ This will cause payment to fail');
-        debugPrint('❌ Full API response: $response');
+        debugPrint(' CRITICAL: User ID is still 0!');
+        debugPrint(' This will cause payment to fail');
+        debugPrint(' Full API response: $response');
         throw Exception(
           'User ID not received from server. Please contact support.',
         );
@@ -272,7 +272,7 @@ class _OtpVerifyPageState extends State<OtpVerifyPage> {
 
       _showSnackBar('Login successful!', isError: false);
 
-      // Wait 2 seconds before navigation
+     
       await Future.delayed(const Duration(seconds: 2));
 
       if (mounted) {
@@ -323,7 +323,7 @@ class _OtpVerifyPageState extends State<OtpVerifyPage> {
 
       setState(() {
         _storedOtp = newOtp;
-        _hasAutoFilled = false; // Reset auto-fill flag
+        _hasAutoFilled = false; 
       });
 
       debugPrint('NEW OTP: $newOtp');
@@ -340,7 +340,7 @@ class _OtpVerifyPageState extends State<OtpVerifyPage> {
 
       _showSnackBar('OTP resent successfully', isError: false);
 
-      // Schedule auto-fill for the new OTP
+      
       _scheduleAutoFill();
     } catch (e) {
       setState(() => _isLoading = false);

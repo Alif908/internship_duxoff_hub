@@ -266,7 +266,7 @@ class _SettingsPageState extends State<SettingsPage> {
                   },
                 ),
                 _divider(),
-                // ✅ LOGOUT BUTTON ADDED HERE
+                
                 _settingsTile(
                   title: 'Logout',
                   onTap: _isLoggingOut ? () {} : _showLogoutDialog,
@@ -323,7 +323,7 @@ class _SettingsPageState extends State<SettingsPage> {
               ),
             ),
             const Spacer(),
-            // Show loading indicator when logging out
+            
             if (isLoading)
               const SizedBox(
                 width: 18,
